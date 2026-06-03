@@ -1,0 +1,34 @@
+{
+  "name": "aorizondo-lowcoder",
+  "owner": {
+    "name": "Antonio Orizondo Leyva",
+    "email": "aorizondoleyva@gmail.com",
+    "url": "https://github.com/aorizondo"
+  },
+  "metadata": {
+    "description": "Toolkit completo para crear aplicaciones Lowcoder desde código con agentes IA: skill + SDK + MCP server",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "lowcoder",
+      "source": "./skills/lowcoder",
+      "description": "Crea aplicaciones Lowcoder (low-code platform) desde código en lugar de arrastrar elementos. Incluye catálogo completo de ~80 componentes, queries REST/JS/SQL, plugins de usuario, SEO y deployment.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Antonio Orizondo Leyva"
+      },
+      "keywords": [
+        "lowcoder",
+        "low-code",
+        "dashboard",
+        "ai-agent",
+        "mcp",
+        "dsl"
+      ],
+      "category": "development",
+      "homepage": "https://github.com/aorizondo/lowcoder-agent-sdk",
+      "license": "MIT"
+    }
+  ]
+}

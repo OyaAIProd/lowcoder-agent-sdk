@@ -1,0 +1,23 @@
+{
+  "domain": "lowcoder",
+  "compatibility": "claude-code,claude-desktop,claude-api,cursor,opencode",
+  "requires": {
+    "mcpServer": {
+      "name": "lowcoder",
+      "package": "@aorizondo/lowcoder-mcp-server",
+      "envVars": ["LOWCODER_BASE_URL", "LOWCODER_API_KEY"]
+    },
+    "sdkPackage": "@aorizondo/lowcoder-agent-sdk-core"
+  },
+  "setup": {
+    "env": ["LOWCODER_BASE_URL", "LOWCODER_API_KEY", "LOWCODER_ORG_ID"],
+    "instructions": "1) Get API key from your Lowcoder UI: Profile → API Keys → Create new key. 2) Get orgId from any existing app's metadata or Settings → Organization. 3) Configure MCP server in your agent client (Claude Code, Cursor, etc.) with the env vars."
+  },
+  "links": {
+    "homepage": "https://github.com/aorizondo/lowcoder-agent-sdk",
+    "documentation": "https://github.com/aorizondo/lowcoder-agent-sdk/blob/main/skills/lowcoder/SKILL.md",
+    "sdk": "https://www.npmjs.com/package/@aorizondo/lowcoder-agent-sdk-core",
+    "mcp": "https://www.npmjs.com/package/@aorizondo/lowcoder-mcp-server",
+    "lowcoder": "https://github.com/lowcoder-org/lowcoder"
+  }
+}

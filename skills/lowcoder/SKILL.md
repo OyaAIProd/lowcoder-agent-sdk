@@ -1,0 +1,1155 @@
+---
+name: lowcoder
+description: Crea aplicaciones Lowcoder (low-code platform) desde código usando el SDK @aorizondo/lowcoder-agent-sdk-core o el MCP server @aorizondo/lowcoder-mcp-server. Usa esto cuando el usuario pida crear, modificar, listar o publicar dashboards, formularios, apps internas o paneles en Lowcoder. Cubre el catálogo completo de ~80 componentes nativos, queries (REST/JS/SQL), expresiones, plugins de usuario, SEO y deployment.
+when_to_use: "El usuario pide crear/modificar/listar/publicar una app, dashboard, panel o formulario en Lowcoder. También cuando menciona 'low-code app', 'componente lowcoder', 'plugin de lowcoder', o cuando quiere generar JSON DSL para una instancia Lowcoder. NO usar para apps en Retool, Appsmith, Tooljet u otras plataformas low-code distintas — son DSLs incompatibles."
+license: MIT
+version: 0.1.0
+---
+
+# Skill: lowcoder
+
+Este skill te enseña a construir aplicaciones Lowcoder de forma fiable usando el SDK y el MCP server. Lowcoder es una plataforma low-code open source (alternativa a Retool/Appsmith). Las apps se representan como un **JSON DSL** complejo — generarlo a mano tiene tasa de error altísima, por eso existe este SDK que lo abstrae con una API fluida.
+
+**Lee este archivo completo antes de tu primera app.** Es largo pero te ahorra horas de debug.
+
+---
+
+## TABLA DE CONTENIDOS
+
+1. [Decisión: SDK vs MCP](#1-decisión-sdk-vs-mcp)
+2. [Setup inicial (5 min)](#2-setup-inicial-5-min)
+3. [Anatomía de una app Lowcoder](#3-anatomía-de-una-app-lowcoder)
+4. [Workflow recomendado paso a paso](#4-workflow-recomendado-paso-a-paso)
+5. [Catálogo completo de componentes](#5-catálogo-completo-de-componentes)
+6. [Queries: REST, JS, SQL — cuándo usar cada uno](#6-queries-rest-js-sql--cuándo-usar-cada-uno)
+7. [Expresiones `{{ }}` y bindings](#7-expresiones---y-bindings)
+8. [Estado: tempStates y transformers](#8-estado-tempstates-y-transformers)
+9. [Layout: auto vs manual, grid de 24 cols](#9-layout-auto-vs-manual-grid-de-24-cols)
+10. [Tema visual: preload CSS + animaciones](#10-tema-visual-preload-css--animaciones)
+11. [SEO completo](#11-seo-completo)
+12. [Plugins de usuario (componentes reutilizables)](#12-plugins-de-usuario-componentes-reutilizables)
+13. [Errores comunes y cómo evitarlos](#13-errores-comunes-y-cómo-evitarlos)
+14. [Buenas prácticas](#14-buenas-prácticas)
+15. [Referencia rápida MCP tools](#15-referencia-rápida-mcp-tools)
+16. [Ejemplos completos](#16-ejemplos-completos)
+17. [Checklist final antes de decir "listo"](#17-checklist-final-antes-de-decir-listo)
+
+---
+
+## 1. Decisión: SDK vs MCP
+
+Antes de hacer nada, elige el camino correcto:
+
+### Usar **MCP tools** cuando
+
+- El usuario quiere algo rápido (1-15 componentes)
+- No necesitas lógica condicional compleja en el momento de construir la app
+- Quieres iterar interactivamente ("añade ahora una columna a la tabla")
+- No tienes acceso al filesystem para escribir scripts
+
+### Usar **SDK TypeScript** cuando
+
+- La app tiene >20 componentes
+- Generas el contenido programáticamente (un loop por cada item de un array)
+- Necesitas componer/reutilizar partes entre apps (helpers, factories)
+- Quieres versionar la app en git como código
+
+**Regla práctica:** empieza con MCP. Si el MCP request crece mucho o el agente empieza a equivocarse, migra a un script TypeScript.
+
+---
+
+## 2. Setup inicial (5 min)
+
+### 2.1 Credenciales que vas a necesitar
+
+| Variable | Para qué | Cómo obtenerla |
+| --- | --- | --- |
+| `LOWCODER_BASE_URL` | URL de la instancia | El usuario te la da (ej: `https://lowcoder.empresa.com`). Sin trailing slash |
+| `LOWCODER_API_KEY` | Auth (recomendado) | Avatar superior derecho → Profile → API Keys → Create new key |
+| `LOWCODER_ORG_ID` | Organización destino | Settings → Organization, o aparece en el campo `orgId` de cualquier app listada |
+
+Si no las tienes, **pide al usuario que las consiga primero** — sin ellas no puedes desplegar.
+
+### 2.2 Setup MCP (modo recomendado para sesiones interactivas)
+
+```jsonc
+// Claude Desktop: ~/Library/Application Support/Claude/claude_desktop_config.json
+// Claude Code: claude mcp add lowcoder ...
+{
+  "mcpServers": {
+    "lowcoder": {
+      "command": "npx",
+      "args": ["-y", "@aorizondo/lowcoder-mcp-server"],
+      "env": {
+        "LOWCODER_BASE_URL": "https://tu-lowcoder.ejemplo.com",
+        "LOWCODER_API_KEY": "tu-token-aquí"
+      }
+    }
+  }
+}
+```
+
+Reinicia el cliente. Verifica que `mcp__lowcoder__create_app` aparece en la lista de tools.
+
+### 2.3 Setup SDK (para scripts)
+
+```bash
+npm install @aorizondo/lowcoder-agent-sdk-core
+# o si tu proyecto usa pnpm/yarn equivalente
+```
+
+```typescript
+import { LowcoderApp, LowcoderClient } from "@aorizondo/lowcoder-agent-sdk-core";
+```
+
+Para ejecutar scripts ad-hoc: `npx tsx mi-script.ts` (no compiles, ejecuta directo).
+
+---
+
+## 3. Anatomía de una app Lowcoder
+
+Una app Lowcoder es un JSON con esta estructura interna (el SDK abstrae todo esto — solo necesitas entender el modelo mental):
+
+```jsonc
+{
+  "ui": {
+    "items": {
+      "<hex8>": { "compType": "button", "name": "btn1", "comp": { "text": "Click", ... } },
+      "<hex8>": { "compType": "table",  "name": "tbl1", "comp": { "data": "{{q.data}}" } }
+    },
+    "layout": {
+      "<hex8>": { "i": "<hex8>", "x": 0, "y": 0, "w": 6, "h": 6 },
+      "<hex8>": { "i": "<hex8>", "x": 0, "y": 6, "w": 24, "h": 40 }
+    }
+  },
+  "queries": [
+    { "id": "js:<24chars>", "compType": "js", "name": "loadUsers", "datasourceId": "#JS_CODE", "comp": { "script": "..." } }
+  ],
+  "tempStates": [...],
+  "transformers": [],
+  "settings": { "title": "Mi App", "gridColumns": 24, ... },
+  "preload": { "script": "...", "css": "..." }
+}
+```
+
+Cosas a recordar:
+- **Los `<hex8>` son aleatorios** generados por el SDK (formato `Math.random()*0xffffffff` en hex)
+- **Las queries JS necesitan `id` con prefijo `"js:"`** o no se ejecutan (Lowcoder las routea a sandbox cliente)
+- **Las queries JS necesitan `datasourceId: "#JS_CODE"`** (system static)
+- **El grid es 24 columnas**, alto en unidades de 8px
+
+El SDK pone todo esto correcto automáticamente. Si construyes el JSON a mano, vas a sufrir.
+
+---
+
+## 4. Workflow recomendado paso a paso
+
+### Paso 1: Entender qué quiere el usuario
+
+Antes de tocar nada, asegúrate de saber:
+- **¿Qué datos** muestra la app? (API pública, base de datos, datos hardcoded)
+- **¿Qué acciones** debe poder hacer? (solo leer, crear/editar, filtros)
+- **¿Privada o pública?** (afecta si llamas `deploy_app` al final)
+- **¿`orgId`** está disponible?
+
+Si falta algo crítico, pregúntalo — **no inventes** valores como orgId.
+
+### Paso 2: Llamar `get_component_types()` (solo MCP)
+
+```
+get_component_types() → te devuelve los ~80 tipos disponibles
+```
+
+Sirve para confirmar qué `compType` válidos puedes usar. Útil cuando el usuario pide algo no obvio ("gráfico de embudo" → confirmar que es `funnelChart`).
+
+### Paso 3: Diseñar layout mental antes de codear
+
+Lowcoder usa grid de **24 columnas** horizontales × filas de 8px alto. Antes de escribir código, dibuja mentalmente:
+
+```
+┌─────────────────────────────────────────┐  fila y=0
+│  HERO TITLE (w=18)        │ LOGO (w=6) │   alto h=12
+├─────────────────────────────────────────┤  y=12
+│ KPI1 │ KPI2 │ KPI3 │ KPI4 (w=6 c/u)    │   h=18
+├─────────────────────────────────────────┤  y=30
+│      LINE CHART       │ BAR CHART       │   h=40
+│      (w=12)           │ (w=12)          │
+├─────────────────────────────────────────┤  y=70
+│      TABLA (w=24)                       │   h=40
+└─────────────────────────────────────────┘
+```
+
+Esto te ahorra `at: { x, y, w, h }` calculados a ojo. Sin `at` el SDK auto-posiciona pero los charts grandes pueden quedar mal.
+
+### Paso 4: Crear la app
+
+**Opción A: MCP** (rápido, app simple)
+
+```jsonc
+create_app({
+  "title": "Dashboard de Ventas",
+  "orgId": "...",
+  "components": [...],
+  "queries": [...],
+  "settings": { "category": "Business" }
+})
+```
+
+**Opción B: SDK TypeScript** (apps complejas, con lógica)
+
+```typescript
+// dashboard.ts — ejecutar: npx tsx dashboard.ts
+import { LowcoderApp, LowcoderClient } from "@aorizondo/lowcoder-agent-sdk-core";
+
+const app = new LowcoderApp("Dashboard de Ventas")
+  .withSettings({ category: "Business", description: "..." })
+  // ...
+  ;
+
+const client = new LowcoderClient({
+  baseUrl: process.env.LOWCODER_BASE_URL!,
+  apiKey: process.env.LOWCODER_API_KEY!,
+});
+const result = await app.deploy(client, process.env.LOWCODER_ORG_ID!);
+console.log(`✅ ${process.env.LOWCODER_BASE_URL}/apps/${result.applicationInfoView.applicationId}/edit`);
+```
+
+### Paso 5: Configurar SEO (opcional pero recomendado para apps públicas)
+
+```
+configure_seo({
+  appId: "...",
+  title: "Dashboard de Ventas — Mi Empresa",
+  description: "Métricas en tiempo real...",
+  ogImage: "https://...",
+  jsonLdType: "WebApplication"
+})
+```
+
+### Paso 6: Publicar (si va a ser usada por usuarios finales)
+
+```
+deploy_app({ appId: "..." })
+```
+
+### Paso 7: Verificar abriendo el editor
+
+Dale al usuario la URL `${baseUrl}/apps/${appId}/edit` y dile **explícitamente**:
+- Modo edit: ve el layout pero las queries automáticas NO se ejecutan
+- Modo `/view`: las queries SÍ se ejecutan, ahí ve la app "viva"
+
+---
+
+## 5. Catálogo completo de componentes
+
+Los tamaños mostrados son `w × h` por defecto. Puedes overridear con `at: { x, y, w?, h? }`.
+
+### Inputs (formularios)
+
+| `type` | Opciones clave | Tamaño |
+| --- | --- | --- |
+| `input` | `label, placeholder, defaultValue, required, allowClear, maxLength` | 6×6 |
+| `password` | igual que input | 6×6 |
+| `textArea` | `minRows, maxRows, maxLength` | 6×24 |
+| `numberInput` | `min, max, step, defaultValue` | 6×6 |
+| `select` | `options: [{label, value}]`, `defaultValue, allowClear, showSearch` | 6×5 |
+| `multiSelect` | igual que select pero array | 6×5 |
+| `checkbox` | `label, defaultValue` | 4×5 |
+| `radio` | `options, defaultValue` | 6×20 |
+| `switch` | `label, defaultValue` | 6×5 |
+| `slider` | `min, max, step, defaultValue` | 6×5 |
+| `rangeSlider` | igual + array | 6×5 |
+| `rating` | `max, defaultValue` | 6×5 |
+| `date` | `placeholder, required` | 6×5 |
+| `dateRange` | igual + array | 10×5 |
+| `time`, `timeRange` | hora/rango de hora | 6×5 / 10×5 |
+| `autocomplete` | `options, placeholder` | 6×5 |
+| `segmentedControl` | toggle visual estilo iOS | 6×5 |
+| `cascader`, `treeSelect`, `tree`, `transfer` | selecciones jerárquicas | varios |
+| `richTextEditor` | editor WYSIWYG (HTML) | 12×40 |
+| `colorPicker` | selector de color | 6×5 |
+| `fileUpload` | sube archivo (base64) | 6×5 |
+| `form` | wrapper de validación | 12×50 |
+| `jsonSchemaForm` | form auto-generado desde JSON Schema | 12×50 |
+
+### Display estático
+
+| `type` | Opciones clave | Tamaño |
+| --- | --- | --- |
+| `text` | `text` (Markdown + HTML + `{{ }}`), `autoHeight` | 6×24 |
+| `image` | `src, altText` | 6×25 |
+| `icon` | `icon: "/icon:antd/dashboard-outlined"`, `iconSize` | 3×5 |
+| `qrCode` | `value: "https://..."` | 5×20 |
+| `jsonLottie` | `value` (URL JSON Lottie), `autoPlay, loop` | 6×25 |
+| `divider` | `title, align` | 24×3 |
+| `progress` | `value, status: success\|active\|exception\|normal` | 6×5 |
+| `progressCircle` | igual | 5×10 |
+| `audio`, `video` | `src` | varios |
+| `shape` | formas SVG | 6×25 |
+| `mermaid` | `diagram: "graph LR\n  A --> B"` | 12×40 |
+| `timeline` | timeline visual | 12×40 |
+
+### Tablas y datos
+
+| `type` | Opciones clave | Tamaño |
+| --- | --- | --- |
+| `table` | `data, columns: [{title, dataIndex, isTag?, isLink?, editable?}], pageSize, showFilter, showDownload` | 12×40 |
+| `tableLite` | versión más ligera | 12×40 |
+| `pivotTable` | tabla pivote | 12×40 |
+| `jsonExplorer` | árbol expandible de JSON | 12×40 |
+| `jsonEditor` | editor de JSON con validación | 12×40 |
+| `listView` | lista de cards renderizables. Dentro usa `currentItem.fieldName` | 12×40 |
+
+### Charts (todos basados en Apache ECharts)
+
+| `type` | Opciones clave |
+| --- | --- |
+| `lineChart` | `data, xAxisKey, yAxisKeys: ["serie1", "serie2"], title, stacked` |
+| `barChart` | igual que line |
+| `pieChart` | `data, labelKey, valueKey, donut: true/false` |
+| `scatterChart` | `data, xAxisKey, yAxisKey` |
+| `funnelChart` | `data, labelKey, valueKey` (Visitas→Carrito→Compra) |
+| `radarChart` | `data, indicatorKey, valueKeys: [...]` |
+| `heatmapChart` | `data, xAxisKey, yAxisKey, valueKey` |
+| `gaugeChart` | `value: 0-100, min, max, unit` — **buggy en versiones antiguas**, prefiere `progressCircle` |
+| `candleStickChart` | velas OHLC |
+| `sankeyChart`, `sunburstChart`, `treemapChart`, `themeriverChart`, `treeChart`, `graphChart` | visualizaciones avanzadas |
+| `chart` | chart genérico legacy (evítalo, usa los especializados) |
+
+**Para configuración ECharts avanzada** (custom tooltips, colores específicos): usa el modo JSON inyectando un `echartsOption` con el JSON completo.
+
+### Botones y acciones
+
+| `type` | Opciones clave | Tamaño |
+| --- | --- | --- |
+| `button` | `text, type: ""\|"submit", onClick: "queryName", disabled, loading, tooltip` | 6×6 |
+| `controlButton`, `toggleButton`, `dropdown` | variantes | varios |
+| `link` | `text, onClick: "queryName"` o `href: "https://..."` | 3×5 |
+| `iconButton` | `prefixIcon, text?, type, shape: circle\|round\|default` | 3×5 |
+| `floatingButton` | botón flotante con `buttons: [{id, label, icon, onClick}]` | 5×5 |
+| `menu` | menú dropdown | 6×5 |
+
+### Layout y contenedores
+
+| `type` | Opciones clave | Tamaño |
+| --- | --- | --- |
+| `container` | wrapper simple | 12×25 |
+| `card` | container con sombra. `title, showHoverEffect` | 8×40 |
+| `collapsibleContainer` | expand/collapse | 12×25 |
+| `tabbedContainer` | tabs con `tabs: [{label, key}]` | 24×50 |
+| `modal` | popup con `title, okText, cancelText`. Apertura: `modal1.setVisible(true)` | overlay |
+| `drawer` | panel lateral. Apertura: `drawer1.openDrawer()` o `setVisible(true)` | overlay |
+| `responsiveLayout`, `columnLayout`, `splitLayout`, `pageLayout` | layouts predefinidos | varios |
+| `grid`, `listView` | repeticiones de items | 12×40 |
+
+### Navegación
+
+| `type` | Opciones clave |
+| --- | --- |
+| `navigation` | menú superior |
+| `step` | wizard de pasos |
+
+### Project management
+
+| `type` | Opciones clave |
+| --- | --- |
+| `calendar` | `events: [{id, title, start, end, color?}]`, `defaultView: month\|week\|day` |
+| `kanban` | tablero con columnas drag-drop |
+| `ganttChart` | gantt con tareas |
+| `hillchart` | hill chart estilo Basecamp |
+| `bpmnEditor` | diagramas BPMN |
+| `timer` | cronómetro/countdown. `defaultValue (ms), format: "HH:mm:ss", type: stopwatch\|countdown` |
+
+### Files
+
+| `type` | Opciones clave |
+| --- | --- |
+| `file` | indicador de archivo |
+| `fileViewer` | renderiza PDF/Office |
+| `fileUpload` | input de archivo, `accept, maxFileSize` |
+
+### Colaboración
+
+| `type` | Opciones clave |
+| --- | --- |
+| `meeting` | room de videoconferencia (Agora) |
+| `sharingcomponent`, `videocomponent` | streams |
+| `avatar` | `src, text, shape: circle\|square, size: large\|default\|small\|<num>` |
+| `avatarGroup` | grupo de avatares |
+| `comment`, `mention` | comments con `@menciones` |
+
+### Otros útiles
+
+| `type` | Opciones clave |
+| --- | --- |
+| `iframe` | `src: "https://...", height` |
+| `scanner` | QR/barcode reader |
+| `signature` | firma digital |
+| `tour` | onboarding guiado |
+| `openLayersGeoMap`, `chartsGeoMap` | mapas |
+| `multiTags` | input de tags |
+
+---
+
+## 6. Queries: REST, JS, SQL — cuándo usar cada uno
+
+### ⚡ Resumen rápido
+
+| Tipo | Cuándo usar | Requiere config previa? |
+| --- | --- | --- |
+| **`fetch` (MCP) / `addFetchQuery` (SDK)** | APIs públicas (jsonplaceholder, dummyjson, APIs internas con CORS abierto) | NO — funciona inmediato |
+| **`js`** | Lógica custom, orquestación de varias queries, transformaciones | NO |
+| **`restApi`** | API con datasource (auth, base URL, headers compartidos) | SÍ — datasource configurado en Lowcoder UI primero |
+| **`mysql`/`postgres`/etc.** | Bases de datos | SÍ — datasource configurado |
+
+### 6.1 `fetch` query (la más útil para empezar)
+
+```jsonc
+// MCP:
+{
+  "id": "loadUsers",
+  "type": "fetch",
+  "options": {
+    "url": "https://jsonplaceholder.typicode.com/users",
+    "method": "GET",
+    "triggerType": "automatic"
+  }
+}
+```
+
+```typescript
+// SDK:
+app.addFetchQuery("loadUsers", {
+  url: "https://jsonplaceholder.typicode.com/users",
+  triggerType: "automatic",
+});
+```
+
+El SDK lo convierte internamente en un JS query con `fetch(...).then(...)`. **Funciona sin configurar datasource.**
+
+### 6.2 `js` query (lógica custom)
+
+**⚠️ DOS REGLAS CRÍTICAS:**
+
+1. **El script NO puede usar `await` top-level.** Lowcoder envuelve el script en `function() { ... }` no-async. Usa `return promise.then(...)`.
+2. **El SDK genera automáticamente el `queryId` con prefijo `"js:"`**. Si construyes el JSON a mano, hazlo igual o el script no se ejecuta.
+
+```typescript
+// CORRECTO:
+app.addJsQuery("processData", {
+  script: `return loadUsers.run().then(function(users) {
+  return users.filter(function(u) { return u.active; });
+});`,
+  triggerType: "manual",
+});
+
+// INCORRECTO (await top-level):
+// script: `const users = await loadUsers.run(); return users.filter(...);`  ❌
+```
+
+### 6.3 `restApi` (datasource configurado)
+
+Solo si el usuario tiene un datasource REST configurado en la UI de Lowcoder (Data Sources → New). Necesitas el `datasourceId` real.
+
+```typescript
+app.addRestQuery("createUser", {
+  url: "/users",                          // relativo a la base URL del datasource
+  method: "POST",
+  headers: { "X-Custom": "value" },
+  body: { name: "{{nameInput.value}}" },
+  bodyType: "application/json",           // ⚠️ MIME completo, NO "json"
+  datasourceId: "abc123...",              // ID real del datasource
+  triggerType: "manual",
+});
+```
+
+**`bodyType` válidos:** `"application/json"`, `"text/plain"`, `"application/x-www-form-urlencoded"`, `"multipart/form-data"`, `"none"`. El SDK acepta aliases (`"json"`, `"raw"`, `"form"`, `"urlencoded"`).
+
+### 6.4 SQL (`mysql`, `postgres`, etc.)
+
+```typescript
+app.addSqlQuery("loadUsers", {
+  sql: "SELECT * FROM users WHERE status = '{{statusFilter.value}}'",
+  datasourceId: "abc123...",   // requerido
+  dbType: "postgres",
+  triggerType: "automatic",
+});
+```
+
+### 6.5 `triggerType`
+
+| Valor | Comportamiento |
+| --- | --- |
+| `"automatic"` | Se ejecuta al cargar la app y cuando cambia cualquier `{{ }}` dependiente |
+| `"manual"` | Solo se ejecuta cuando se llama `queryName.run()` desde un event handler u otra query |
+| `"onPageLoad"` | (alias de automatic en algunas versiones) |
+
+**Recomendación:** queries de lectura → `automatic`. Queries de escritura (crear/editar) → `manual`, disparadas por un botón.
+
+### 6.6 Estados de query (accesibles en `{{ }}`)
+
+```javascript
+{{queryName.data}}        // los datos retornados
+{{queryName.isFetching}}  // true mientras se ejecuta — perfecto para loading de botones
+{{queryName.error}}       // mensaje de error si falló
+{{queryName.code}}        // código de estado interno
+```
+
+---
+
+## 7. Expresiones `{{ }}` y bindings
+
+Todo lo que pongas entre `{{ }}` se evalúa como JavaScript en el navegador con acceso a todos los componentes y queries.
+
+### Casos comunes
+
+```javascript
+// Bind directo
+"{{loadUsers.data}}"
+
+// Transformación
+"{{loadUsers.data.map(u => ({label: u.name, value: u.id}))}}"
+
+// Acceso a fila seleccionada de tabla
+"{{usersTable.selectedRow.email}}"
+
+// Valor de input
+"{{nameInput.value}}"
+
+// Condicional para visibility/disabled
+"{{!form1.valid}}"
+"{{usersTable.selectedRow === undefined}}"
+
+// Currentuser, urlparams
+"{{currentUser.name}}"
+"{{urlParams.id}}"
+
+// Format con librerías globales (dayjs, lodash, numbro, uuid, papaparse)
+"{{dayjs(record.createdAt).format('YYYY-MM-DD')}}"
+"{{numbro(record.amount).formatCurrency('$0,0.00')}}"
+"{{lodash.groupBy(loadUsers.data, 'role')}}"
+"{{uuid.v4()}}"
+
+// Helpers que tú defines en preload.script
+"{{fmt.currency(loadCarts.data.total)}}"
+```
+
+### Tip de oro
+
+Si un agente está construyendo expresiones complejas con `?.` (optional chaining), úsalo siempre cuando lees `query.data`:
+
+```javascript
+// ✅ Seguro durante el primer render (data aún no llegó)
+"{{loadUsers.data?.length || 0}}"
+
+// ❌ Crashea si data === undefined
+"{{loadUsers.data.length}}"
+```
+
+---
+
+## 8. Estado: tempStates y transformers
+
+### Temporary State
+
+Almacena valores intermedios. Se accede vía `{{stateName.value}}`.
+
+```typescript
+app.addTempState("currentPage", 1);
+app.addTempState("selectedFilters", { status: "all", category: null });
+```
+
+**Actualizar desde JS queries:**
+
+```javascript
+// En un script JS query
+currentPage.setValue(currentPage.value + 1);
+selectedFilters.setIn(["status"], "active");
+```
+
+### Transformers
+
+Funciones puras que transforman datos sin side effects. Útil para derivar valores complejos.
+
+```typescript
+// El SDK aún no tiene wrapper directo, pero puedes inyectarlos via DSL crudo
+// O preferir un JS query manual que retorna el cálculo
+```
+
+### Cuándo usar qué
+
+- **TempState** para valores que el usuario controla (paginación, filtros, modo)
+- **JS query manual** cuando necesitas lógica con dependencias
+- **Transformer** para fórmulas puras reutilizables
+
+---
+
+## 9. Layout: auto vs manual, grid de 24 cols
+
+### Auto layout (sin `at`)
+
+El SDK hace bin-packing first-fit: coloca cada componente en el primer espacio libre. Bueno para prototipos rápidos pero los charts grandes pueden quedar mal.
+
+```typescript
+app
+  .addText("title", { text: "Hola" })
+  .addButton("btn", { text: "Click" })
+  // Sin especificar at — el SDK los coloca
+  ;
+```
+
+### Manual layout (con `at`)
+
+Te da control total. **Recomendado para apps presentables.**
+
+```typescript
+app.addText("title", { text: "## Hero", at: { x: 0, y: 0, w: 24, h: 8 } });
+app.addText("kpi1",  { text: "...", at: { x: 0, y: 8, w: 6, h: 18 } });
+app.addText("kpi2",  { text: "...", at: { x: 6, y: 8, w: 6, h: 18 } });
+```
+
+### Reglas del grid
+
+- **24 columnas** horizontales
+- **`h` en unidades de 8px** (`h: 5` = 40px)
+- **No solapamiento** entre componentes
+- **El alto crece dinámicamente** según contenido (texto con autoHeight)
+- **Modales/Drawers** no entran en el grid (son overlay)
+
+### Tamaños recomendados
+
+- KPI card: `w: 6, h: 18`
+- Chart pequeño: `w: 8, h: 40`
+- Chart grande: `w: 12, h: 40`
+- Tabla: `w: 24, h: 50`
+- Botón en toolbar: `w: 4, h: 6`
+- Input con label: `w: 6, h: 8`
+- Divider con título de sección: `w: 24, h: 3`
+
+---
+
+## 10. Tema visual: preload CSS + animaciones
+
+Apps profesionales necesitan estilo. Inyecta CSS y JS globales con `withPreload`:
+
+```typescript
+app.withPreload({
+  script: `
+    // Helpers globales accesibles en {{ }}
+    window.fmt = {
+      currency: n => new Intl.NumberFormat('es-MX', {style:'currency', currency:'USD'}).format(n || 0),
+      compact:  n => new Intl.NumberFormat('en', {notation:'compact'}).format(n || 0),
+      date:     d => new Date(d).toLocaleDateString('es-MX'),
+    };
+  `,
+  css: `
+    body {
+      background: linear-gradient(135deg, #f5f7ff, #ecf0ff);
+      font-family: 'Inter', -apple-system, sans-serif;
+    }
+
+    /* Glass effect en cards */
+    .ui-comp-card, [class*="CardWrapper"] {
+      backdrop-filter: blur(12px);
+      background: rgba(255,255,255,0.85) !important;
+      border-radius: 16px !important;
+      box-shadow: 0 8px 32px rgba(99,102,241,0.08) !important;
+      transition: all 0.3s;
+    }
+    .ui-comp-card:hover { transform: translateY(-2px); }
+
+    /* Botones con gradiente */
+    .ui-comp-button .ant-btn-primary {
+      background: linear-gradient(135deg, #6366f1, #8b5cf6) !important;
+      border: none !important;
+    }
+
+    /* Animaciones de entrada */
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .react-grid-item { animation: fadeInUp 0.5s ease-out both; }
+    .react-grid-item:nth-child(2) { animation-delay: 0.1s; }
+    .react-grid-item:nth-child(3) { animation-delay: 0.2s; }
+
+    /* Responsive móvil */
+    @media (max-width: 768px) {
+      .ui-comp-text h1 { font-size: 1.75rem !important; }
+    }
+  `
+});
+```
+
+### Selectores CSS útiles
+
+| Selector | Para qué |
+| --- | --- |
+| `.ui-comp-{type}` | Todos los componentes de un tipo (ej: `.ui-comp-table`) |
+| `.{componentId}` | Un componente específico por su nombre (ej: `.kpi1`) |
+| `.react-grid-item` | Cada celda del grid |
+| `[class*="CardWrapper"]` | Wrapper interno de cards |
+| `.ant-btn`, `.ant-table`, `.ant-input` | Clases internas de Ant Design |
+
+---
+
+## 11. SEO completo
+
+Lowcoder es una SPA — el HTML inicial NO tiene los datos. **Limitación inherente**: el contenido dinámico (`{{query.data}}`) no aparece en el HTML inicial, por lo que Google necesita renderizar JS para indexarlo (lo hace, pero más lento).
+
+**Lo que SÍ puedes optimizar:**
+
+### Opción A: Tool `configure_seo` (recomendado, idempotente)
+
+```jsonc
+configure_seo({
+  appId: "...",
+  title: "Dashboard de Ventas — Mi Empresa",      // <60 chars
+  description: "Plataforma de análisis de ventas...", // <160 chars
+  ogImage: "https://cdn.../og-1200x630.jpg",
+  canonical: "https://miapp.com/dashboard",
+  siteName: "Mi Empresa",
+  themeColor: "#6366f1",
+  jsonLdType: "WebApplication",   // o "WebPage", "SoftwareApplication", "Organization"
+  twitterCard: true
+})
+```
+
+Inyecta automáticamente: `<title>`, `<meta description>`, OpenGraph completo, Twitter Card, JSON-LD Schema.org, canonical, theme-color, robots, viewport. Idempotente — llámalo varias veces sin duplicar.
+
+### Opción B: Preload script manual
+
+```javascript
+function setMeta(name, value, attr = "name") {
+  let el = document.querySelector(`meta[${attr}="${name}"]`);
+  if (!el) { el = document.createElement("meta"); el.setAttribute(attr, name); document.head.appendChild(el); }
+  el.setAttribute("content", value);
+}
+function safeApply() {
+  document.title = "Mi App";
+  setMeta("description", "...");
+  setMeta("og:title", "Mi App", "property");
+  // ...
+}
+safeApply();
+setTimeout(safeApply, 500);   // Lowcoder pisa meta tags durante carga, re-aplicar
+setTimeout(safeApply, 2000);
+```
+
+### Para SEO crítico real
+
+Embebe la app dentro de un sitio Next.js que haga SSR del shell semántico y use `LowcoderAppView` solo para la parte interactiva. Lowcoder por sí solo no hará SSR.
+
+---
+
+## 12. Plugins de usuario (componentes reutilizables)
+
+Los plugins son componentes React empaquetados como paquetes npm que el usuario instala en su Lowcoder una vez. Después se usan como cualquier componente nativo.
+
+### Usar un plugin instalado
+
+```typescript
+// Si el usuario tiene instalado mi-paquete que exporta el componente MyWidget:
+app.addComponent("widget1", "my-paquete/MyWidget", {
+  // opciones específicas del plugin
+});
+```
+
+### Descubrir qué plugins tiene instalados
+
+Llama `get_app_dsl({ appId: "alguna-app-existente", simplified: false })` y busca compTypes con formato `"npm-package/CompName"` o nombres no listados en este skill — esos son plugins.
+
+### Crear un plugin nuevo
+
+```bash
+yarn create lowcoder-plugin nombre-del-plugin
+cd nombre-del-plugin
+```
+
+Estructura mínima en `src/index.ts`:
+
+```typescript
+import {
+  UICompBuilder,
+  stringExposingStateControl,
+  withExposingConfigs,
+  NameConfig,
+  Section,
+} from "lowcoder-sdk";
+
+const childrenMap = {
+  value: stringExposingStateControl("value", ""),
+  title: stringExposingStateControl("title", "Hola"),
+};
+
+const MyComp = new UICompBuilder(childrenMap, (props) => (
+  <div className="my-widget">
+    <h3>{props.title.value}</h3>
+    <p>{props.value.value}</p>
+  </div>
+))
+  .setPropertyViewFn((children) => (
+    <Section name="Basic">
+      {children.title.propertyView({ label: "Título" })}
+      {children.value.propertyView({ label: "Valor" })}
+    </Section>
+  ))
+  .build();
+
+export default {
+  my_widget: withExposingConfigs(MyComp, [new NameConfig("value", "")]),
+};
+```
+
+Sección en `package.json`:
+
+```json
+{
+  "lowcoder": {
+    "comps": {
+      "my_widget": { "name": "Mi Widget", "icon": "./icons/icon.png" }
+    }
+  }
+}
+```
+
+Build y publish: `yarn build --publish`.
+
+Instalar en Lowcoder: **Insert → Extensions → Add npm plugin** → buscar el paquete.
+
+---
+
+## 13. Errores comunes y cómo evitarlos
+
+### ❌ "Datasource cannot be found"
+**Causa:** queries JS sin `datasourceId: "#JS_CODE"`, o REST queries sin datasource registrado.
+**Fix:** usa `addFetchQuery()` que pone todo correcto, o asegúrate de poner `datasourceId: "#JS_CODE"` para JS.
+
+### ❌ "await is only valid in async functions"
+**Causa:** script JS query con `await` top-level.
+**Fix:** usa `return fetch(...).then(...)` en lugar de `const r = await fetch(...)`.
+
+### ❌ "Service is busy" en endpoints
+**Causa A:** Lowcoder < 2.7.0 tiene un bug donde `#JS_CODE` no se resuelve.
+**Fix:** actualiza a 2.7.6+.
+**Causa B:** node-service caído.
+**Fix:** `docker ps` y reiniciar el container del node-service.
+
+### ❌ Component "Not Found" en /view
+**Causa:** charts especializados (`lineChart`, etc.) son componentes remotos cargados desde `lowcoder-comps` npm. Si la app no se ha publicado, en `/view` puede fallar la carga.
+**Fix:** primero usa `/edit` para confirmar render, luego `deploy_app` y prueba `/view`.
+
+### ❌ KPIs muestran 0 / "No data"
+**Causa A:** estás en `/edit` (las queries automáticas no corren).
+**Fix:** ve a `/view`.
+**Causa B:** la expresión `{{ }}` accede a `data` antes de que cargue.
+**Fix:** usa `?.` y default: `{{loadUsers.data?.length || 0}}`.
+
+### ❌ Gauge chart no muestra mis datos
+**Causa:** gaugeChart requiere `echartsOption` con estructura compleja específica por subtipo.
+**Fix:** usa `progressCircle` con `value: N` — visualmente similar y funciona siempre.
+
+### ❌ "Cannot construct instance of `java.lang.String[]`"
+**Causa:** estás llamando `/api/query/execute` desde curl/script con `path` como string en lugar de array.
+**Fix:** `path: ["queries", "loadUsers"]` (array). El SDK ya lo hace bien — solo es problema si construyes el request a mano.
+
+### ❌ Tabla muestra "[object Object]" en una columna
+**Causa:** `dataIndex` apunta a un objeto, no a primitiva.
+**Fix:** usa notación de path: `dataIndex: "company.name"` para nested objects.
+
+### ❌ El botón submit del form no funciona
+**Causa:** el form requiere `type: "submit"` en el botón **Y** que el botón esté dentro del form, no afuera.
+**Fix:** anida el botón en el form, o usa un botón normal con `onClick` que llame al query.
+
+### ❌ El `bodyType: "json"` da error
+**Causa:** Lowcoder requiere MIME type completo.
+**Fix:** `"application/json"`. El SDK acepta el alias `"json"` y lo traduce.
+
+### ❌ Meta tags SEO se sobreescriben
+**Causa:** Lowcoder pone sus defaults DESPUÉS de tu preload script.
+**Fix:** usa `configure_seo` tool (incluye retries con setTimeout 500ms, 2s, 5s).
+
+---
+
+## 14. Buenas prácticas
+
+### Naming
+
+- **IDs en camelCase descriptivo:** `loadUsers`, `salesTable`, `nameInput`. Evita `q1`, `btn1`, `comp123`.
+- **Queries con verbo:** `loadX`, `saveX`, `deleteX`, `searchX`. Facilita leer el código.
+
+### Estructura
+
+- **Una sección visual = un divider con `title`**. Da estructura clara.
+- **KPIs siempre en fila al tope** después del hero.
+- **Filtros sobre la tabla, nunca debajo**.
+- **CTAs (Crear/Guardar) abajo a la derecha del form**, no en medio.
+
+### Datos
+
+- **Siempre `?.` al acceder a `query.data`**. Evita crashes en el primer render.
+- **Defaults explícitos:** `{{loadUsers.data || []}}` para evitar errores en `.map()`.
+- **`isFetching` en botones de acción:** `loading: "{{saveRecord.isFetching}}"`.
+
+### UX
+
+- **Feedback visible:** `loading`, `disabled` condicional, `tooltip` en acciones críticas.
+- **Confirmación para destructivos:** queries DELETE/UPDATE con `confirmationModal` (en el JSON).
+- **Estados vacíos:** las tablas muestran "No data" por defecto; texto de ayuda si lo necesitas.
+
+### Performance
+
+- **Tablas grandes:** `pageSize: 10-20`, `showFilter: true`. Lowcoder pagina lado cliente por default.
+- **Queries pesadas:** ponlas `manual` y dispara con botón "Cargar".
+- **Charts con muchos datos:** preprocesa en un JS query (groupBy, aggregate) antes de pasarlos al chart.
+
+### Versiones
+
+- **Verifica versión Lowcoder ≥ 2.7.0** antes de empezar. Versiones anteriores tienen bugs críticos con queries JS.
+
+### SEO
+
+- **Llama `configure_seo` después de `create_app`** para apps públicas.
+- **Title <60 chars, description <160 chars** (límites de Google).
+- **`ogImage` 1200x630px** para Open Graph.
+
+### Seguridad
+
+- **NUNCA hardcodees secretos en queries JS** — usa env vars del datasource.
+- **Las queries JS corren en el navegador del usuario** — cualquier secret en el script es público.
+- **Para API calls con auth, usa REST query con datasource configurado**, no fetch JS.
+
+---
+
+## 15. Referencia rápida MCP tools
+
+### `get_component_types()`
+
+Sin argumentos. Retorna lista de los ~80 tipos. **Llamar primero** si dudas qué `type` usar.
+
+### `create_app(input)`
+
+```typescript
+{
+  title: string,
+  orgId: string,
+  components: Array<{
+    id: string,
+    type: string,           // "button", "table", "lineChart", etc.
+    options?: object,        // específico por tipo
+    layout?: { x, y, w?, h? }
+  }>,
+  queries?: Array<{
+    id: string,
+    type: "fetch" | "js" | "restApi" | "mysql" | "postgres" | "mssql" | ...,
+    options: object
+  }>,
+  settings?: { description?, category?, gridPaddingX?, ... },
+  publish?: boolean,
+  folderId?: string
+}
+// → { appId, name, url }
+```
+
+### `update_app(input)`
+
+Igual que `create_app` pero con `appId` en lugar de `title+orgId`. **Añade** sin eliminar lo existente.
+
+### `list_apps({ orgId? })`
+
+→ `Array<{ appId, name, type, status, createdAt }>`
+
+### `get_app_dsl({ appId, simplified? })`
+
+- `simplified: true` → resumen legible de componentes y queries
+- `simplified: false` → DSL JSON completo
+
+### `deploy_app({ appId })`
+
+Publica la app. Útil cuando creaste con `publish: false`.
+
+### `configure_seo(input)`
+
+```typescript
+{
+  appId: string,
+  title: string,
+  description: string,
+  ogImage?: string,
+  canonical?: string,
+  siteName?: string,
+  themeColor?: string,           // default "#6366f1"
+  jsonLdType?: "WebApplication" | "WebPage" | "SoftwareApplication" | "Organization",
+  twitterCard?: boolean,         // default true
+  preserveCss?: boolean          // default true — mantiene tu CSS preload
+}
+// → { seoConfigured: true, tags: [...] }
+```
+
+---
+
+## 16. Ejemplos completos
+
+### 16.1 Dashboard simple via MCP
+
+```jsonc
+create_app({
+  "title": "Mi Primer Dashboard",
+  "orgId": "<tu-org-id>",
+  "components": [
+    { "id": "title", "type": "text",
+      "options": { "text": "## 📊 Dashboard de Ventas" },
+      "layout": { "x": 0, "y": 0, "w": 24, "h": 8 } },
+
+    { "id": "kpi1", "type": "text",
+      "options": { "text": "<div style='font-size:11px;text-transform:uppercase;color:#64748b'>Usuarios</div><div style='font-size:2rem;font-weight:700;color:#6366f1'>{{loadUsers.data?.length || 0}}</div>" },
+      "layout": { "x": 0, "y": 8, "w": 6, "h": 18 } },
+
+    { "id": "kpi2", "type": "text",
+      "options": { "text": "<div style='font-size:11px;text-transform:uppercase;color:#64748b'>Productos</div><div style='font-size:2rem;font-weight:700;color:#6366f1'>{{loadProducts.data?.total || 0}}</div>" },
+      "layout": { "x": 6, "y": 8, "w": 6, "h": 18 } },
+
+    { "id": "chart", "type": "barChart",
+      "options": {
+        "title": "Productos por categoría",
+        "data": "{{loadProducts.data?.products ? Object.entries(loadProducts.data.products.reduce((a,p)=>{a[p.category]=(a[p.category]||0)+1;return a;},{})).map(([k,v])=>({categoria:k, cantidad:v})) : []}}",
+        "xAxisKey": "categoria",
+        "yAxisKeys": ["cantidad"]
+      },
+      "layout": { "x": 12, "y": 8, "w": 12, "h": 30 } },
+
+    { "id": "users", "type": "table",
+      "options": {
+        "data": "{{loadUsers.data}}",
+        "columns": [
+          { "title": "ID", "dataIndex": "id" },
+          { "title": "Nombre", "dataIndex": "name" },
+          { "title": "Email", "dataIndex": "email" },
+          { "title": "Empresa", "dataIndex": "company.name" }
+        ],
+        "pageSize": 10
+      },
+      "layout": { "x": 0, "y": 38, "w": 24, "h": 50 } }
+  ],
+  "queries": [
+    { "id": "loadUsers", "type": "fetch",
+      "options": { "url": "https://jsonplaceholder.typicode.com/users", "triggerType": "automatic" } },
+    { "id": "loadProducts", "type": "fetch",
+      "options": { "url": "https://dummyjson.com/products?limit=30", "triggerType": "automatic" } }
+  ],
+  "settings": { "category": "Business", "description": "Dashboard demo" }
+})
+```
+
+### 16.2 CRUD completo via SDK
+
+```typescript
+// crud-users.ts — ejecutar: npx tsx crud-users.ts
+import { LowcoderApp, LowcoderClient } from "@aorizondo/lowcoder-agent-sdk-core";
+
+const app = new LowcoderApp("Gestión de Usuarios")
+  .withSettings({ category: "Business" })
+
+  // Hero
+  .addText("title", { text: "## 👥 Usuarios", at: { x: 0, y: 0, w: 24, h: 8 } })
+  .addDivider("d1", { at: { x: 0, y: 8, w: 24, h: 3 } })
+
+  // Form de creación
+  .addInput("nameInput", { label: "Nombre", required: true, at: { x: 0, y: 11, w: 8, h: 8 } })
+  .addInput("emailInput", { label: "Email", placeholder: "user@example.com", at: { x: 8, y: 11, w: 8, h: 8 } })
+  .addSelect("roleSelect", {
+    label: "Rol",
+    options: [
+      { label: "Admin", value: "admin" },
+      { label: "Usuario", value: "user" },
+    ],
+    defaultValue: "user",
+    at: { x: 16, y: 11, w: 5, h: 8 },
+  })
+  .addButton("createBtn", {
+    text: "Crear usuario",
+    type: "submit",
+    onClick: "createUser",
+    disabled: "{{!nameInput.value || !emailInput.value}}",
+    loading: "{{createUser.isFetching}}",
+    at: { x: 21, y: 11, w: 3, h: 8 },
+  })
+
+  // Tabla
+  .addDivider("d2", { title: "Usuarios existentes", align: "left", at: { x: 0, y: 19, w: 24, h: 3 } })
+  .addTable("usersTable", {
+    data: "{{loadUsers.data}}",
+    columns: [
+      { title: "ID", dataIndex: "id" },
+      { title: "Nombre", dataIndex: "name" },
+      { title: "Email", dataIndex: "email" },
+      { title: "Teléfono", dataIndex: "phone" },
+      { title: "Ciudad", dataIndex: "address.city" },
+    ],
+    pageSize: 10,
+    at: { x: 0, y: 22, w: 24, h: 50 },
+  })
+
+  // Queries
+  .addFetchQuery("loadUsers", {
+    url: "https://jsonplaceholder.typicode.com/users",
+    triggerType: "automatic",
+  })
+  .addJsQuery("createUser", {
+    script: `return fetch("https://jsonplaceholder.typicode.com/users", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    name: nameInput.value,
+    email: emailInput.value,
+    role: roleSelect.value,
+  }),
+}).then(function(res) {
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  return res.json();
+});`,
+    triggerType: "manual",
+  });
+
+const client = new LowcoderClient({
+  baseUrl: process.env.LOWCODER_BASE_URL!,
+  apiKey: process.env.LOWCODER_API_KEY!,
+});
+const result = await app.deploy(client, process.env.LOWCODER_ORG_ID!);
+console.log(`✅ ${process.env.LOWCODER_BASE_URL}/apps/${result.applicationInfoView.applicationId}/edit`);
+```
+
+### 16.3 Dashboard con SEO + tema premium
+
+Ver [examples/mega-dashboard.ts](https://github.com/aorizondo/lowcoder-agent-sdk/blob/main/examples/mega-dashboard.ts) en el repo — 50+ componentes con glass effect, gradientes, animaciones, mermaid, charts especializados, y SEO completo.
+
+---
+
+## 17. Checklist final antes de decir "listo"
+
+- [ ] La app se creó correctamente (recibí `appId` del MCP/SDK)
+- [ ] Abrí la URL del editor y vi los componentes esperados
+- [ ] Las queries cargan datos en `/view` (no `/edit`)
+- [ ] Los KPIs muestran números reales, no "0" o "[object Object]"
+- [ ] Los charts renderizan ejes y series correctas
+- [ ] Si el usuario pidió SEO → llamé `configure_seo`
+- [ ] Si el usuario quiere publicarla → llamé `deploy_app`
+- [ ] Si las queries fallan → verifiqué versión Lowcoder >= 2.7.0
+- [ ] Si el usuario pidió tema visual → usé `withPreload` con CSS
+- [ ] Le di al usuario la URL final con instrucciones claras (edit vs view)
+- [ ] Documenté en mi respuesta qué tools del MCP usé (transparencia)
+
+---
+
+## Apéndice: limitaciones conocidas
+
+| Limitación | Workaround |
+| --- | --- |
+| Lowcoder <2.7.0 no soporta `#JS_CODE` → queries JS fallan | Actualizar a 2.7.0+ |
+| `gaugeChart` requiere config ECharts compleja | Usar `progressCircle` con `value` (visualmente similar) |
+| `/view` requiere que charts especializados estén "publicados" | Usar `/edit` primero, luego `deploy_app` |
+| SPA = SEO limitado (Google indexa pero más lento) | Embed en Next.js con SSR si SEO es crítico |
+| `await` top-level no funciona en JS queries | Usar `.then()` y `return` la Promise |
+| Queries automatic no se ejecutan en /edit | Probar en /view para confirmar carga |
+| `bodyType: "json"` no funciona | Usar `"application/json"` o el alias del SDK |
+| El frontend cachea componentes remotos | Hard refresh (`Ctrl+Shift+R`) tras cambios de plugins |

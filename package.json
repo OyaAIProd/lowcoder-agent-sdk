@@ -1,0 +1,48 @@
+{
+  "name": "lowcoder-agent-sdk",
+  "version": "0.1.0",
+  "description": "SDK + MCP server + Claude Skill para crear aplicaciones Lowcoder mediante código en lugar de arrastrar elementos",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "dev": "npm run dev --workspaces --if-present",
+    "clean": "rm -rf packages/*/dist packages/*/node_modules node_modules",
+    "publish:all": "npm publish --workspaces --access public"
+  },
+  "keywords": [
+    "lowcoder",
+    "low-code",
+    "sdk",
+    "mcp",
+    "agent",
+    "claude",
+    "ai-agent",
+    "dashboard-generator",
+    "dsl"
+  ],
+  "author": {
+    "name": "Antonio Orizondo Leyva",
+    "email": "aorizondoleyva@gmail.com",
+    "url": "https://github.com/aorizondo"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aorizondo/lowcoder-agent-sdk.git"
+  },
+  "bugs": {
+    "url": "https://github.com/aorizondo/lowcoder-agent-sdk/issues"
+  },
+  "homepage": "https://github.com/aorizondo/lowcoder-agent-sdk#readme",
+  "devDependencies": {
+    "@types/node": "^20.19.41",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
