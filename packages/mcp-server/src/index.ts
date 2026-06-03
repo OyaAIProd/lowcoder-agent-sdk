@@ -26,6 +26,18 @@ import {
   GetMyOrgsInputSchema,
   handleGetMyOrgs,
 } from "./tools/get_my_orgs.js";
+import {
+  ListDatasourcesInputSchema, handleListDatasources,
+  ListDatasourceTypesInputSchema, handleListDatasourceTypes,
+  ListJsPluginsInputSchema, handleListJsPlugins,
+  CreateDatasourceInputSchema, handleCreateDatasource,
+  UpdateDatasourceInputSchema, handleUpdateDatasource,
+  DeleteDatasourceInputSchema, handleDeleteDatasource,
+  TestDatasourceInputSchema, handleTestDatasource,
+  GetDatasourceStructureInputSchema, handleGetDatasourceStructure,
+  ListDatasourcePermissionsInputSchema, handleListDatasourcePermissions,
+  GrantDatasourcePermissionInputSchema, handleGrantDatasourcePermission,
+} from "./tools/datasources.js";
 
 // ─── Configuración desde variables de entorno ────────────────────────────────
 
@@ -140,6 +152,86 @@ server.tool(
     const result = await handleConfigureSeo(input, client);
     return { content: [{ type: "text", text: result }] };
   }
+);
+
+// ─── Datasources ────────────────────────────────────────────────────────────
+
+server.tool(
+  "list_datasources",
+  "Lista los datasources configurados en la organización. Usa esto antes de crear " +
+    "una query REST/SQL para ver qué datasources ya existen y reusar IDs.",
+  ListDatasourcesInputSchema.shape,
+  async (input) => ({ content: [{ type: "text", text: await handleListDatasources(input, client) }] })
+);
+
+server.tool(
+  "list_datasource_types",
+  "Lista los tipos de datasource disponibles en la instancia, incluyendo plugins JS " +
+    "registrados dinámicamente (s3, slack, jira, openAi, stripe, etc.). " +
+    "Útil para descubrir qué se puede conectar.",
+  ListDatasourceTypesInputSchema.shape,
+  async (input) => ({ content: [{ type: "text", text: await handleListDatasourceTypes(input, client) }] })
+);
+
+server.tool(
+  "list_js_plugins",
+  "Lista plugins JS del node-service junto con el SCHEMA EXACTO de su config (params requeridos). " +
+    "Usa esto antes de crear un datasource de tipo s3, slack, jira, openAi, etc.",
+  ListJsPluginsInputSchema.shape,
+  async (input) => ({ content: [{ type: "text", text: await handleListJsPlugins(input, client) }] })
+);
+
+server.tool(
+  "create_datasource",
+  "Crea un nuevo datasource (postgres, mysql, mongodb, redis, restApi, graphql, " +
+    "googleSheets, smtp, s3, slack, openAi, etc.). Por defecto prueba la conexión antes " +
+    "de crear (testFirst=true).",
+  CreateDatasourceInputSchema.shape,
+  async (input) => ({ content: [{ type: "text", text: await handleCreateDatasource(input, client) }] })
+);
+
+server.tool(
+  "update_datasource",
+  "Actualiza un datasource existente. IMPORTANTE: omite los campos sensibles " +
+    "(password, uri, serviceAccount) para preservar los valores guardados.",
+  UpdateDatasourceInputSchema.shape,
+  async (input) => ({ content: [{ type: "text", text: await handleUpdateDatasource(input, client) }] })
+);
+
+server.tool(
+  "delete_datasource",
+  "Elimina (soft-delete) un datasource. Las queries que lo usaban dejarán de funcionar.",
+  DeleteDatasourceInputSchema.shape,
+  async (input) => ({ content: [{ type: "text", text: await handleDeleteDatasource(input, client) }] })
+);
+
+server.tool(
+  "test_datasource",
+  "Prueba conexión a un datasource SIN crearlo. Útil para validar credenciales antes de guardar.",
+  TestDatasourceInputSchema.shape,
+  async (input) => ({ content: [{ type: "text", text: await handleTestDatasource(input, client) }] })
+);
+
+server.tool(
+  "get_datasource_structure",
+  "Obtiene la estructura del datasource (tablas, columnas, foreign keys). " +
+    "Solo funciona para tipos con esquema: SQL, MongoDB.",
+  GetDatasourceStructureInputSchema.shape,
+  async (input) => ({ content: [{ type: "text", text: await handleGetDatasourceStructure(input, client) }] })
+);
+
+server.tool(
+  "list_datasource_permissions",
+  "Lista usuarios y grupos con permisos sobre un datasource.",
+  ListDatasourcePermissionsInputSchema.shape,
+  async (input) => ({ content: [{ type: "text", text: await handleListDatasourcePermissions(input, client) }] })
+);
+
+server.tool(
+  "grant_datasource_permission",
+  "Otorga permisos (viewer/editor/owner) a usuarios o grupos sobre un datasource.",
+  GrantDatasourcePermissionInputSchema.shape,
+  async (input) => ({ content: [{ type: "text", text: await handleGrantDatasourcePermission(input, client) }] })
 );
 
 // ─── Arrancar servidor con transporte stdio ──────────────────────────────────

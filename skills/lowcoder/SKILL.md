@@ -22,6 +22,7 @@ Este skill te enseña a construir aplicaciones Lowcoder de forma fiable usando e
 4. [Workflow recomendado paso a paso](#4-workflow-recomendado-paso-a-paso)
 5. [Catálogo completo de componentes](#5-catálogo-completo-de-componentes)
 6. [Queries: REST, JS, SQL — cuándo usar cada uno](#6-queries-rest-js-sql--cuándo-usar-cada-uno)
+6.5. [Datasources (conexiones reutilizables)](#65-datasources-conexiones-reutilizables)
 7. [Expresiones `{{ }}` y bindings](#7-expresiones---y-bindings)
 8. [Estado: tempStates y transformers](#8-estado-tempstates-y-transformers)
 9. [Layout: auto vs manual, grid de 24 cols](#9-layout-auto-vs-manual-grid-de-24-cols)
@@ -540,6 +541,134 @@ app.addSqlQuery("loadUsers", {
 
 ---
 
+## 6.5. Datasources (conexiones reutilizables)
+
+> Doc completa: [docs/datasources.md](https://github.com/aorizondo/lowcoder-agent-sdk/blob/main/docs/datasources.md)
+> Doc oficial Lowcoder: <https://docs.lowcoder.cloud/lowcoder-documentation/connect-your-data/data-source-basics>
+
+Un **datasource** es una conexión configurada (BD, API, SaaS) que tus queries reutilizan. **Para queries simples NO necesitas crear uno** — usa `addFetchQuery()` o `addJsQuery()` que apuntan al datasource virtual `#JS_CODE`.
+
+### Crea un datasource cuando
+
+- Tienes credenciales que compartir entre múltiples queries (auth, base URL, headers comunes)
+- Conectas a una BD relacional (postgres, mysql, mssql, oracle, mariadb, clickHouse, snowflake)
+- Conectas a MongoDB, Redis o Elasticsearch
+- Quieres usar un plugin del node-service (S3, Slack, Jira, OpenAI, Stripe, etc. — ~60 disponibles)
+
+### Tipos disponibles
+
+**SQL:** `postgres`, `mysql`, `mariadb`, `mssql`, `oracle`, `clickHouse`, `snowflake`
+**NoSQL/Search:** `mongodb`, `redis`, `es` (Elasticsearch)
+**HTTP:** `restApi`, `graphql`
+**SaaS:** `googleSheets`, `smtp`
+**Plugins JS (~60):** `s3`, `slack`, `jira`, `openAi`, `stripe`, `shopify`, `twilio`, `sendGrid`, `notion`, `asana`, `github`, `gitlab`, `firebase`, `supabaseApi`, `bigQuery`, `athena`, `dynamodb`, `couchdb`, `huggingFaceEndpoint`, etc.
+
+### Flujo recomendado desde MCP
+
+```text
+1. list_datasource_types({})           → ver qué tipos están disponibles
+2. list_datasources({})                → ver si ya existe uno reusable
+3. list_js_plugins({ appId })          → si es plugin JS, descubre el schema exacto
+4. test_datasource({...})              → valida credenciales SIN crear
+5. create_datasource({...})            → crea con testFirst=true (default)
+6. addSqlQuery/addRestQuery con datasourceId: ds.id
+```
+
+### Ejemplos rápidos (SDK)
+
+```typescript
+import { datasource, LowcoderClient } from "@aorizondo/lowcoder-agent-sdk-core";
+
+const orgId = await client.getCurrentOrgId();
+
+// PostgreSQL
+const pgDs = await client.createDatasource(
+  datasource("Prod Postgres")
+    .postgres({
+      host: "db.example.com",
+      database: "app_prod",
+      username: "lowcoder",
+      password: "s3cr3t",
+      usingSsl: true,
+    })
+    .inOrg(orgId)
+    .build()
+);
+
+// REST API con auth Basic
+const stripeDs = await client.createDatasource(
+  datasource("Stripe")
+    .restApi({
+      url: "https://api.stripe.com",
+      authConfig: { type: "BASIC_AUTH", username: "sk_live_xxx", password: "" },
+    })
+    .inOrg(orgId)
+    .build()
+);
+
+// MongoDB con URI
+const mongoDs = await client.createDatasource(
+  datasource("Mongo Atlas")
+    .mongodb({ usingUri: true, uri: "mongodb+srv://user:pwd@cluster.example.net/db" })
+    .inOrg(orgId)
+    .build()
+);
+
+// Plugin JS (S3)
+const s3Ds = await client.createDatasource(
+  datasource("My S3")
+    .jsPlugin("s3", {
+      accessKey: "AKIA...",
+      secretKey: "...",
+      region: "us-east-1",
+    })
+    .inOrg(orgId)
+    .build()
+);
+```
+
+### Usar el datasource en queries
+
+```typescript
+app.addSqlQuery("loadUsers", {
+  sql: "SELECT * FROM users WHERE status = '{{status.value}}'",
+  datasourceId: pgDs.id,      // ← ID del datasource
+  dbType: "postgres",
+  triggerType: "automatic",
+});
+
+app.addRestQuery("getStripeCustomer", {
+  url: "/v1/customers/{{customerId.value}}",  // relativo a base URL del datasource
+  method: "GET",
+  datasourceId: stripeDs.id,
+  triggerType: "manual",
+});
+```
+
+### ⚠️ Reglas de seguridad CRÍTICAS
+
+1. **Lowcoder no devuelve passwords en GET.** En `updateDatasource`, **omite** los campos `password`, `uri`, `serviceAccount` para preservar los valores guardados. Si los incluyes con `null` o `""` los borrarías.
+2. **Nunca pegues passwords reales en logs o conversación.** Si el usuario te los da, pásalos a `create_datasource` y luego olvídalos.
+3. **Las queries JS corren en el navegador** — cualquier secret hardcodeado en un JS query es visible al usuario. Para auth usa REST queries con datasource + `authConfig`.
+
+### Errores comunes
+
+| Síntoma | Causa | Fix |
+| --- | --- | --- |
+| `Test connection failed: connection refused` | Host/puerto incorrectos o firewall | Verifica desde un cliente externo (psql, mongo-shell, curl) |
+| `Datasource cannot be found` al ejecutar query | `datasourceId` apunta a un ID inexistente | Lista con `list_datasources` y verifica el ID |
+| Datasource creado pero queries fallan con 401 | Password se borró en update por enviar `null` | Re-crea o usa la UI para corregir |
+| Plugin JS desconocido (ej "saleforce") | Plugin no instalado en este node-service | Usa `list_datasource_types` para ver disponibles |
+| Lowcoder no soporta el plugin que necesitas | Es un plugin EE o no implementado | Crea el datasource como `restApi` apuntando a la API del SaaS |
+
+### Limitaciones conocidas (OSS)
+
+- `BEARER_TOKEN_AUTH` y `OAUTH2` (client-credentials/auth-code) **no implementados** en REST plugin OSS. Workaround: usa `BASIC_AUTH` o pon el `Authorization` header manualmente
+- `OAUTH2_INHERIT_FROM_LOGIN` SÍ funciona si la org tiene SSO configurado
+- `streamApi` (WebSocket) y `alasql` son client-only, no persisten como datasource
+
+---
+
 ## 7. Expresiones `{{ }}` y bindings
 
 Todo lo que pongas entre `{{ }}` se evalúa como JavaScript en el navegador con acceso a todos los componentes y queries.
@@ -1038,6 +1167,21 @@ Publica la app. Útil cuando creaste con `publish: false`.
 }
 // → { seoConfigured: true, tags: [...] }
 ```
+
+### Tools de Datasources
+
+| Tool | Para qué |
+| --- | --- |
+| `list_datasources({ orgId?, type?, name? })` | Lista los datasources existentes |
+| `list_datasource_types({ orgId? })` | Lista todos los tipos disponibles (incluyendo plugins JS) |
+| `list_js_plugins({ appId })` | Schema EXACTO de cada plugin JS (s3, slack, jira, openAi, ...) |
+| `test_datasource({ type, datasourceConfig, orgId? })` | Prueba conexión SIN crear |
+| `create_datasource({ name, type, datasourceConfig, orgId?, testFirst? })` | Crea. Por defecto prueba conexión antes (testFirst=true) |
+| `update_datasource({ id, name?, datasourceConfig? })` | Actualiza. **OMITE** password/uri/serviceAccount para preservar |
+| `delete_datasource({ id })` | Soft-delete |
+| `get_datasource_structure({ id, ignoreCache? })` | Tablas/columnas (solo SQL/Mongo) |
+| `list_datasource_permissions({ id })` | Permisos del datasource |
+| `grant_datasource_permission({ id, role, userIds?, groupIds? })` | Otorgar viewer/editor/owner |
 
 ---
 

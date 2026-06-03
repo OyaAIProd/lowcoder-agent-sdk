@@ -22,6 +22,8 @@ npx tsx examples/01-hello-world.ts
 | 04 | [with-seo.ts](04-with-seo.ts) | SEO completo via preload (Open Graph + Twitter + JSON-LD) | 1 min |
 | 05 | [themed-dashboard.ts](05-themed-dashboard.ts) | Tema premium: glass effect, gradientes, animaciones, responsive | 2 min |
 | 06 | [mega-demo.ts](06-mega-demo.ts) | ~50 componentes: Analytics + DevOps + E-commerce + Mermaid | 5 min |
+| 07 | [with-datasource.ts](07-with-datasource.ts) | Crea datasource REST API y úsalo en queries | 1 min |
+| 08 | [postgres-crud.ts](08-postgres-crud.ts) | CRUD completo contra PostgreSQL real | 3 min |
 
 ## Recomendado
 

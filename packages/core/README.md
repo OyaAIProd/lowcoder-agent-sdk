@@ -155,10 +155,37 @@ Librerías globales: `dayjs`, `lodash`, `numbro`, `uuid`, `papaparse`.
 - Node.js >= 18
 - Lowcoder >= 2.7.0 (versiones anteriores tienen bug con queries JS — ver [troubleshooting](https://github.com/aorizondo/lowcoder-agent-sdk/blob/main/docs/troubleshooting.md))
 
+## Datasources
+
+El SDK también permite gestionar datasources (BD, APIs, SaaS) con builder fluido:
+
+```typescript
+import { datasource } from "@aorizondo/lowcoder-agent-sdk-core";
+
+const req = datasource("Prod Postgres")
+  .postgres({ host: "...", database: "...", username: "u", password: "p" })
+  .inOrg(orgId)
+  .build();
+
+const ds = await client.createDatasource(req);
+
+// Y luego usar el ID en queries:
+app.addSqlQuery("loadUsers", {
+  sql: "SELECT * FROM users",
+  datasourceId: ds.id,
+  dbType: "postgres",
+});
+```
+
+Soporta: `postgres`, `mysql`, `mariadb`, `mssql`, `oracle`, `clickHouse`, `snowflake`, `mongodb`, `redis`, `es`, `smtp`, `restApi`, `graphql`, `googleSheets`, y **~60 plugins JS** (S3, Slack, Jira, OpenAI, Stripe, etc.) via `.jsPlugin(pluginId, config)`.
+
+Ver [docs/datasources.md](https://github.com/aorizondo/lowcoder-agent-sdk/blob/main/docs/datasources.md) para detalles.
+
 ## Documentación completa
 
 - [Getting Started](https://github.com/aorizondo/lowcoder-agent-sdk/blob/main/docs/getting-started.md)
 - [SDK Reference](https://github.com/aorizondo/lowcoder-agent-sdk/blob/main/docs/sdk-reference.md)
+- [Datasources](https://github.com/aorizondo/lowcoder-agent-sdk/blob/main/docs/datasources.md)
 - [Ejemplos](https://github.com/aorizondo/lowcoder-agent-sdk/tree/main/examples)
 
 ## Licencia

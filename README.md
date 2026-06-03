@@ -94,6 +94,7 @@ O por proyecto en `.claude/skills/lowcoder/SKILL.md`.
 | Primeros pasos detallados | [docs/getting-started.md](docs/getting-started.md) |
 | Referencia del SDK (todos los componentes) | [docs/sdk-reference.md](docs/sdk-reference.md) |
 | MCP Server: setup y tools | [docs/mcp-server.md](docs/mcp-server.md) |
+| **Datasources** (conexiones BD/API/SaaS) | [docs/datasources.md](docs/datasources.md) |
 | Skill: instalación en Claude Code/Desktop/.ai | [docs/skill-installation.md](docs/skill-installation.md) |
 | Crear plugins de componentes para Lowcoder | [docs/plugin-creation.md](docs/plugin-creation.md) |
 | FAQ y troubleshooting | [docs/troubleshooting.md](docs/troubleshooting.md) |

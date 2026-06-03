@@ -89,6 +89,16 @@ En **Settings → Cursor Settings → MCP**:
 | `get_app_dsl` | Obtiene el DSL (estructura) de una app — útil para auditar lo creado |
 | `deploy_app` | Publica una app para acceso externo |
 | `configure_seo` | Inyecta meta tags, Open Graph, JSON-LD para SEO completo en la app |
+| `list_datasources` | Lista los datasources existentes en la organización |
+| `list_datasource_types` | Lista los tipos disponibles (postgres, mongo, slack, s3, ...) |
+| `list_js_plugins` | Schema EXACTO de cada plugin JS antes de configurarlo |
+| `test_datasource` | Prueba conexión SIN crear el datasource |
+| `create_datasource` | Crea datasource (con test connection automático por defecto) |
+| `update_datasource` | Actualiza. Omite passwords/uri para preservarlos |
+| `delete_datasource` | Soft-delete |
+| `get_datasource_structure` | Tablas/columnas (solo SQL/Mongo) |
+| `list_datasource_permissions` | Permisos del datasource |
+| `grant_datasource_permission` | Otorgar viewer/editor/owner a users o groups |
 
 ## Ejemplo: prompt típico al agente
 

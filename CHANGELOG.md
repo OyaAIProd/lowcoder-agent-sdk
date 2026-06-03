@@ -2,6 +2,53 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) y versionado semántico ([SemVer](https://semver.org/spec/v2.0.0.html)).
 
+## [0.3.0] - 2026-06-03
+
+### Added — Soporte completo de datasources
+
+- **SDK Core** (`@aorizondo/lowcoder-agent-sdk-core`)
+  - 13 nuevos métodos en `LowcoderClient`:
+    - CRUD: `createDatasource`, `getDatasource`, `updateDatasource`, `deleteDatasource`
+    - Discovery: `listDatasources`, `listDatasourcesByOrg`, `listJsPlugins`, `listDatasourceTypes`
+    - Test: `testDatasource` (prueba conexión sin crear)
+    - Estructura: `getDatasourceStructure` (tablas/columnas para SQL/Mongo)
+    - Dynamic: `getDatasourceDynamicConfig` (para plugins JS con `extra()`)
+    - Permisos: `listDatasourcePermissions`, `grantDatasourcePermissions`, `updateDatasourcePermission`, `revokeDatasourcePermission`
+  - Nuevo **`DatasourceBuilder`** fluido con shortcut `datasource(name)`:
+    - `.postgres({...})`, `.mysql({...})`, `.mariadb({...})`, `.mssql({...})`, `.oracle({...})`, `.clickHouse({...})`, `.snowflake({...})`
+    - `.mongodb({...})`, `.redis({...})`, `.elasticsearch({...})`
+    - `.restApi({...})`, `.graphql({...})`
+    - `.smtp({...})`, `.googleSheets({...})`
+    - `.jsPlugin(pluginId, config)` para cualquier plugin del node-service (~60: s3, slack, jira, openAi, stripe, etc.)
+  - Exports nuevos de tipos: `DatasourceType`, `Datasource`, `DatasourceConfig`, `DataSourcePluginMeta`, `DatasourcePermission`, `SYSTEM_STATIC_DATASOURCE_IDS`, etc.
+
+- **MCP Server** (`@aorizondo/lowcoder-mcp-server`)
+  - 10 tools nuevos:
+    - `list_datasources` — lista los datasources de la org
+    - `list_datasource_types` — tipos disponibles (incluye plugins JS)
+    - `list_js_plugins` — schema EXACTO de cada plugin JS
+    - `test_datasource` — valida conexión sin crear
+    - `create_datasource` — crea con test connection automático (testFirst=true)
+    - `update_datasource` — actualiza preservando secrets
+    - `delete_datasource` — soft-delete
+    - `get_datasource_structure` — tablas/columnas
+    - `list_datasource_permissions` — permisos
+    - `grant_datasource_permission` — viewer/editor/owner
+
+- **Docs y skill**
+  - Nueva sección **6.5 Datasources** en `SKILL.md` con catálogo completo, ejemplos por tipo, flujo recomendado y warnings de seguridad
+  - Nuevo `docs/datasources.md` — referencia completa de ~600 líneas con todos los configs, opciones de auth, SSL, OAuth inherit, plugins JS, permisos
+  - Tabla de tools MCP actualizada en `SKILL.md` y `mcp-server.md`
+  - 2 ejemplos nuevos: `07-with-datasource.ts` (REST API) y `08-postgres-crud.ts` (PostgreSQL completo)
+
+### Verified
+
+- Test live contra Lowcoder 2.7.6 self-hosted: crear datasource REST API + listarlo + crear app que lo usa, todo funciona.
+
+### Source
+
+Confirmado contra el código fuente Java de Lowcoder (`server/api-service/.../{DatasourceController,UpsertDatasourceRequest,*DatasourceConfig}.java`) y el código TypeScript del cliente (`client/packages/lowcoder/src/api/datasourceApi.ts`). La doc oficial está incompleta para configs detallados.
+
 ## [0.2.0] - 2026-06-03
 
 ### Added

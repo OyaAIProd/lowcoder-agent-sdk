@@ -1,6 +1,6 @@
 {
   "name": "@aorizondo/lowcoder-mcp-server",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "MCP Server para que agentes de IA (Claude, Cursor, etc.) creen aplicaciones Lowcoder via Model Context Protocol",
   "type": "module",
   "main": "dist/index.js",
@@ -20,7 +20,7 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@aorizondo/lowcoder-agent-sdk-core": "^0.2.0",
+    "@aorizondo/lowcoder-agent-sdk-core": "^0.3.0",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "zod": "^3.23.0"
   },
