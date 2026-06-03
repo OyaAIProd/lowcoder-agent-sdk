@@ -1,9 +1,32 @@
 ---
 name: lowcoder
-description: Crea aplicaciones Lowcoder (low-code platform) desde código usando el SDK @aorizondo/lowcoder-agent-sdk-core o el MCP server @aorizondo/lowcoder-mcp-server. Usa esto cuando el usuario pida crear, modificar, listar o publicar dashboards, formularios, apps internas o paneles en Lowcoder. Cubre el catálogo completo de ~80 componentes nativos, queries (REST/JS/SQL), expresiones, plugins de usuario, SEO y deployment.
-when_to_use: "El usuario pide crear/modificar/listar/publicar una app, dashboard, panel o formulario en Lowcoder. También cuando menciona 'low-code app', 'componente lowcoder', 'plugin de lowcoder', o cuando quiere generar JSON DSL para una instancia Lowcoder. NO usar para apps en Retool, Appsmith, Tooljet u otras plataformas low-code distintas — son DSLs incompatibles."
+description: Crea aplicaciones Lowcoder (low-code platform) desde código usando el SDK @aorizondo/lowcoder-agent-sdk-core o el MCP server @aorizondo/lowcoder-mcp-server. Usa esto cuando el usuario pida crear, modificar, listar o publicar dashboards, formularios, apps internas o paneles en Lowcoder. Cubre el catálogo completo de ~80 componentes nativos, queries (REST/JS/SQL), datasources (postgres/mysql/mongo/redis/s3/slack/openai/...), expresiones, plugins de usuario, SEO y deployment.
+when_to_use: "El usuario pide crear/modificar/listar/publicar una app, dashboard, panel o formulario en Lowcoder. También cuando menciona 'low-code app', 'componente lowcoder', 'datasource lowcoder', 'plugin de lowcoder', o cuando quiere generar JSON DSL para una instancia Lowcoder. NO usar para apps en Retool, Appsmith, Tooljet u otras plataformas low-code distintas — son DSLs incompatibles."
 license: MIT
-version: 0.1.0
+version: 0.3.0
+argument-hint: "<descripción de la app o acción Lowcoder>"
+
+# ─── Anthropic Agent Skills (Claude Code, Claude Desktop, Claude API) ──────
+allowed-tools:
+  - Bash
+  - Read
+  - Write
+  - Edit
+  - Grep
+  - Glob
+
+# ─── OMO / OpenCode plugin (auto-arranca el MCP al cargar el skill) ────────
+# El sistema de skills de OMO (https://github.com/...) lee este campo y arranca
+# automáticamente el MCP server. Equivalente a `mcp.json` en el mismo directorio.
+mcp:
+  lowcoder:
+    command: npx
+    args:
+      - "-y"
+      - "@aorizondo/lowcoder-mcp-server"
+    env:
+      LOWCODER_BASE_URL: "${LOWCODER_BASE_URL}"
+      LOWCODER_API_KEY: "${LOWCODER_API_KEY}"
 ---
 
 # Skill: lowcoder
@@ -11,6 +34,60 @@ version: 0.1.0
 Este skill te enseña a construir aplicaciones Lowcoder de forma fiable usando el SDK y el MCP server. Lowcoder es una plataforma low-code open source (alternativa a Retool/Appsmith). Las apps se representan como un **JSON DSL** complejo — generarlo a mano tiene tasa de error altísima, por eso existe este SDK que lo abstrae con una API fluida.
 
 **Lee este archivo completo antes de tu primera app.** Es largo pero te ahorra horas de debug.
+
+---
+
+## 📦 Recursos disponibles en este skill
+
+Este skill incluye archivos auxiliares en su directorio. En sistemas compatibles con `@path` (OMO, OpenCode) puedes referenciarlos directamente. Si tu agente NO soporta `@path`, lee los archivos manualmente con tu herramienta `Read` desde las rutas relativas al directorio del skill.
+
+### references/ — Documentación detallada (mismas que `docs/` del repo)
+
+| Archivo | Cuándo leerlo |
+| --- | --- |
+| @references/getting-started.md | Tutorial paso a paso de 10 min. Primera vez usando el SDK |
+| @references/sdk-reference.md | Referencia completa de todos los métodos `LowcoderApp` y `LowcoderClient` |
+| @references/mcp-server.md | Setup del MCP server y descripción de los tools |
+| @references/datasources.md | Configuración de datasources (BD, APIs, SaaS, plugins JS) |
+| @references/plugin-creation.md | Crear componentes plugins reutilizables para Lowcoder |
+| @references/troubleshooting.md | Errores comunes y soluciones |
+| @references/skill-installation.md | Cómo se instala este skill en distintos clientes |
+
+### assets/dsl-templates/ — Plantillas de DSL para copiar y adaptar
+
+| Archivo | Para qué |
+| --- | --- |
+| @assets/dsl-templates/kpi-card.json | KPI card con HTML estilizado. Reemplaza LABEL, VALUE_EXPR, TREND |
+| @assets/dsl-templates/data-table.json | Tabla de datos con columnas. Reemplaza DATA_EXPR y `columns` |
+| @assets/dsl-templates/line-chart.json | Line chart multi-serie. Reemplaza DATA_EXPR, X_KEY y series |
+| @assets/dsl-templates/crud-form.json | Form input+input+select+button con disabled condicional |
+
+### assets/preload/ — Snippets para `withPreload`
+
+| Archivo | Para qué |
+| --- | --- |
+| @assets/preload/helpers.js | Helpers globales (`fmt.currency`, `fmt.compact`, `group`, `sumBy`, ...) — copia entero al `script` |
+| @assets/preload/glass-theme.css | Tema premium: glass effect, gradientes, animaciones, responsive — copia entero al `css` |
+| @assets/preload/seo-script.js | SEO completo con retries. Reemplaza TITLE, DESCRIPTION, OG_IMAGE |
+
+### Ejemplos completos verificados (ejecutables)
+
+Todos los ejemplos en `examples/` del repo están testeados end-to-end contra una instancia Lowcoder real (verificado en v0.3.0):
+
+| # | Archivo | Verificado |
+| --- | --- | --- |
+| 01 | examples/01-hello-world.ts | ✅ |
+| 02 | examples/02-dashboard-simple.ts | ✅ |
+| 03 | examples/03-crud-users.ts | ✅ |
+| 04 | examples/04-with-seo.ts | ✅ |
+| 05 | examples/05-themed-dashboard.ts | ✅ |
+| 06 | examples/06-mega-demo.ts | ✅ (~50 componentes) |
+| 07 | examples/07-with-datasource.ts | ✅ (REST datasource real) |
+| 08 | examples/08-postgres-crud.ts | ⚠️ requiere Postgres accesible (test connection se ejecuta antes de crear) |
+
+Si el usuario pide algo similar a uno de esos casos, **léelo primero** (`Read` tool) y adáptalo en lugar de partir de cero.
+
+---
 
 ---
 

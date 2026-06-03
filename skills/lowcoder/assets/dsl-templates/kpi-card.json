@@ -1,0 +1,10 @@
+{
+  "_description": "KPI card con HTML estilizado. Reemplaza LABEL, VALUE_EXPR y TREND.",
+  "_usage": "Copia este objeto al array `components` de create_app, ajusta id y layout.",
+  "id": "kpi1",
+  "type": "text",
+  "options": {
+    "text": "<div style=\"font-size:11px;text-transform:uppercase;color:#64748b;font-weight:600;letter-spacing:0.08em\">LABEL</div><div style=\"font-size:2.25rem;font-weight:700;background:linear-gradient(135deg,#6366f1,#ec4899);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin:4px 0\">{{ VALUE_EXPR }}</div><div style=\"color:#10b981;font-size:0.875rem;font-weight:600\">▲ TREND</div>"
+  },
+  "layout": { "x": 0, "y": 0, "w": 6, "h": 18 }
+}

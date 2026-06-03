@@ -1,0 +1,13 @@
+{
+  "$schema": "https://raw.githubusercontent.com/anthropics/claude-code/main/schemas/mcp.json",
+  "mcpServers": {
+    "lowcoder": {
+      "command": "npx",
+      "args": ["-y", "@aorizondo/lowcoder-mcp-server"],
+      "env": {
+        "LOWCODER_BASE_URL": "${LOWCODER_BASE_URL}",
+        "LOWCODER_API_KEY": "${LOWCODER_API_KEY}"
+      }
+    }
+  }
+}

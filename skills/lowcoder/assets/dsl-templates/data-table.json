@@ -1,0 +1,18 @@
+{
+  "_description": "Tabla de datos con columnas. Reemplaza DATA_EXPR y la lista columns.",
+  "id": "table1",
+  "type": "table",
+  "options": {
+    "data": "{{ DATA_EXPR }}",
+    "columns": [
+      { "title": "ID", "dataIndex": "id", "width": 60 },
+      { "title": "Nombre", "dataIndex": "name" },
+      { "title": "Email", "dataIndex": "email" }
+    ],
+    "pageSize": 10,
+    "showFilter": true,
+    "showDownload": true,
+    "showRefresh": true
+  },
+  "layout": { "x": 0, "y": 0, "w": 24, "h": 50 }
+}

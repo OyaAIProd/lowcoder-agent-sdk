@@ -1,0 +1,12 @@
+{
+  "_description": "Line chart con múltiples series. Reemplaza DATA_EXPR, X_KEY y los nombres de series.",
+  "id": "lineChart1",
+  "type": "lineChart",
+  "options": {
+    "title": "TÍTULO",
+    "data": "{{ DATA_EXPR }}",
+    "xAxisKey": "X_KEY",
+    "yAxisKeys": ["serie1", "serie2"]
+  },
+  "layout": { "x": 0, "y": 0, "w": 12, "h": 40 }
+}
