@@ -386,8 +386,8 @@ Todos los `add*` aceptan opcionalmente `at: { x?, y?, w?, h? }` para layout manu
 ```typescript
 .build()                          // Retorna LowcoderDSL (objeto JS)
 .toJSON()                         // JSON.stringify pretty
-.deploy(client, orgId, {
-  folderId?: string,
+.deploy(client, orgId?, {         // orgId opcional — si se omite, se auto-detecta
+  folderId?: string,              // del workspace activo del usuario via /api/v1/users/me
   publish?: boolean,
 })                                // Retorna ApplicationView con applicationId
 ```
@@ -410,6 +410,17 @@ new LowcoderClient({
 ```typescript
 client.authenticate()             // Obtiene JWT si usaste email+password
 
+// Usuario y organizaciones (descubrir orgId automáticamente)
+client.getCurrentUser(): Promise<CurrentUserResponse>
+  // → { id, currentOrgId, username, uiLanguage, avatar, orgAndRoles, connections }
+
+client.getCurrentOrgId(): Promise<string>
+  // Atajo al currentOrgId del workspace activo
+
+client.listMyOrgs(): Promise<Array<OrgInfo & { role, isCurrent }>>
+  // Todas las orgs del usuario, con la activa primero
+
+// Apps
 client.createApp({
   orgId, name, applicationType: 1 | 2 | 3 | 6,
   editingApplicationDSL: LowcoderDSL,
@@ -421,6 +432,22 @@ client.getApp(appId): Promise<ApplicationView>
 client.publishApp(appId): Promise<void>
 client.listApps(orgId?): Promise<ApplicationMeta[]>
 client.deleteApp(appId): Promise<void>
+```
+
+#### Descubrir tu `orgId` cuando no lo sabes
+
+```typescript
+// Opción 1: atajo directo (1 línea)
+const orgId = await client.getCurrentOrgId();
+
+// Opción 2: ver todas tus orgs y elegir
+const orgs = await client.listMyOrgs();
+orgs.forEach(o => console.log(`${o.id}  ${o.name}  ${o.isCurrent ? "← activa" : ""}`));
+const myOrg = orgs.find(o => o.name === "Mi Workspace")!.id;
+
+// Opción 3: usuario completo con metadata
+const me = await client.getCurrentUser();
+console.log(`Usuario: ${me.username}, workspaces: ${me.orgAndRoles.length}`);
 ```
 
 ### `applicationType` values

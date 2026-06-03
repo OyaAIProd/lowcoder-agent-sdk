@@ -44,8 +44,8 @@ const client = new LowcoderClient({
   apiKey: process.env.LOWCODER_API_KEY!,
 });
 
-// 3. Deploy
-const result = await app.deploy(client, process.env.LOWCODER_ORG_ID!);
+// 3. Deploy (orgId opcional — se auto-detecta del workspace activo)
+const result = await app.deploy(client);
 console.log(result.applicationInfoView.applicationId);
 ```
 

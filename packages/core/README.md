@@ -109,7 +109,7 @@ Cualquier método de componente acepta `at: { x, y, w?, h? }` opcional para layo
 | --- | --- |
 | `build()` | Retorna el `LowcoderDSL` (objeto JS) |
 | `toJSON()` | String JSON formateado |
-| `deploy(client, orgId, { publish?, folderId? })` | Crea la app en Lowcoder via API |
+| `deploy(client, orgId?, { publish?, folderId? })` | Crea la app en Lowcoder via API. `orgId` opcional — auto-detectado del workspace activo si se omite |
 
 ### `LowcoderClient`
 

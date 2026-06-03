@@ -19,9 +19,10 @@ import { LowcoderApp, LowcoderClient } from "@aorizondo/lowcoder-agent-sdk-core"
 
 const BASE_URL = process.env.LOWCODER_BASE_URL!;
 const API_KEY = process.env.LOWCODER_API_KEY!;
-const ORG_ID = process.env.LOWCODER_ORG_ID!;
-if (!BASE_URL || !API_KEY || !ORG_ID) {
-  console.error("Faltan envs: LOWCODER_BASE_URL, LOWCODER_API_KEY, LOWCODER_ORG_ID");
+// ORG_ID es opcional — si no se pasa, el SDK lo auto-detecta del workspace activo
+const ORG_ID = process.env.LOWCODER_ORG_ID;
+if (!BASE_URL || !API_KEY) {
+  console.error("Faltan envs requeridas: LOWCODER_BASE_URL, LOWCODER_API_KEY");
   process.exit(1);
 }
 

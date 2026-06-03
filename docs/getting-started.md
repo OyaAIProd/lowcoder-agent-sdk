@@ -173,10 +173,12 @@ npx tsx watch mi-app.ts
 ## Variables de entorno recomendadas en `.env`
 
 ```bash
-# .env (no commitees)
+# .env (no commitees — añade .env a .gitignore)
 LOWCODER_BASE_URL=https://tu-lowcoder.ejemplo.com
 LOWCODER_API_KEY=eyJhbGc...
-LOWCODER_ORG_ID=69b44d7a4cf2e872dae12536
+
+# Opcional — solo si tienes varios workspaces y quieres especificar uno
+# LOWCODER_ORG_ID=69b44d7a4cf2e872dae12536
 ```
 
 Cárgalo en tu script con `import "dotenv/config"` (necesitarás `npm i dotenv`).
