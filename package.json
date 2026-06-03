@@ -1,6 +1,6 @@
 {
   "name": "lowcoder-agent-sdk",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "SDK + MCP server + Claude Skill para crear aplicaciones Lowcoder mediante código en lugar de arrastrar elementos",
   "private": true,
   "workspaces": [

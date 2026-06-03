@@ -139,7 +139,46 @@ export class LowcoderClient {
     return Array.isArray(data) ? data : (data as { applications: ApplicationMeta[] }).applications ?? [];
   }
 
+  /**
+   * Mueve la app a la papelera (soft-delete). En Lowcoder, las apps pasan primero
+   * por la papelera y solo desde ahí se pueden borrar permanentemente.
+   *
+   * Path correcto en Lowcoder 2.7.x: `PUT /api/v1/applications/recycle/{id}`
+   * (NO `/{id}/recycle` — eso devuelve 5000 "Service is busy" que en realidad
+   * es un 404 disfrazado).
+   */
+  async recycleApp(appId: string): Promise<boolean> {
+    await this.authenticate();
+    return this.put<boolean>(`/api/v1/applications/recycle/${appId}`, undefined);
+  }
+
+  /** Alias de `recycleApp` — DELETE en la API permanente requiere recycle primero. */
   async deleteApp(appId: string): Promise<void> {
+    await this.recycleApp(appId);
+  }
+
+  /** Restaura una app desde la papelera. */
+  async restoreApp(appId: string): Promise<boolean> {
+    await this.authenticate();
+    return this.put<boolean>(`/api/v1/applications/restore/${appId}`, undefined);
+  }
+
+  /** Lista las apps en la papelera (status RECYCLED). */
+  async listRecycledApps(): Promise<ApplicationMeta[]> {
+    await this.authenticate();
+    const data = await this.get<{ applications: ApplicationMeta[] } | ApplicationMeta[]>(
+      `/api/v1/applications/recycle/list`
+    );
+    return Array.isArray(data)
+      ? data
+      : (data as { applications: ApplicationMeta[] }).applications ?? [];
+  }
+
+  /**
+   * Borra permanentemente una app que YA está en la papelera.
+   * Si la app está NORMAL, primero llama `recycleApp` y luego este método.
+   */
+  async deleteAppPermanently(appId: string): Promise<void> {
     await this.authenticate();
     await this.request("DELETE", `/api/v1/applications/${appId}`);
   }

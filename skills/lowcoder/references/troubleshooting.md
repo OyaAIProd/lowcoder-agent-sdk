@@ -51,13 +51,32 @@ Si usas `addJsQuery()` del SDK, asegúrate de aplicar este patrón al script. `a
 
 **Fix:** `path` debe ser array: `path: ["queries", "loadUsers"]` o `path: []` para queries en la raíz.
 
-### `Oops! Service is busy, please try again later.`
+### `Oops! Service is busy, please try again later.` (code 5000)
 
-**Causa A:** el endpoint que llamaste no existe (Lowcoder devuelve este genérico para 404 y 500).
+**El mensaje es engañoso.** Lowcoder retorna `code: 5000` + HTTP 500 para **CUALQUIER 404 NOT_FOUND**, no solo para errores del backend. El `GlobalExceptionHandler` los uniforma.
 
-**Fix:** verifica el path correcto. Algunos endpoints requieren versión de API: `/api/v1/...`
+**Diagnóstico:**
 
-**Causa B:** node-service caído.
+```bash
+docker logs --since 1m <lowcoder-api-service-container> | grep -A 3 ERROR
+```
+
+Si ves `ResponseStatusException: 404 NOT_FOUND` → el path está mal escrito o cambió entre versiones.
+
+**Causa A:** estás llamando un endpoint que NO existe en esta versión.
+
+**Casos conocidos** (paths que parecen lógicos pero NO existen):
+
+| ❌ Path equivocado | ✅ Path correcto |
+| --- | --- |
+| `PUT /api/v1/applications/{id}/recycle` | `PUT /api/v1/applications/recycle/{id}` |
+| `PUT /api/v1/applications/{id}/restore` | `PUT /api/v1/applications/restore/{id}` |
+| `GET /api/v1/info/healthz` | (no existe en OSS) |
+| `GET /api/v1/info/version` | (no existe en OSS) |
+
+**Fix:** usa el SDK que ya tiene los paths correctos (`client.recycleApp`, `client.restoreApp`, etc.) o consulta el OpenAPI de tu instancia: `GET /api/docs/openapi.json`.
+
+**Causa B:** node-service caído (solo afecta endpoints que llaman al node-service: `/api/query/execute`, `/api/datasources/test` con SQL, etc.).
 
 **Fix:** `docker ps | grep node-service` — si no aparece o está reiniciándose, reinícialo desde Easypanel.
 

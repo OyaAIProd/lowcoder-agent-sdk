@@ -2,6 +2,24 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) y versionado semántico ([SemVer](https://semver.org/spec/v2.0.0.html)).
 
+## [0.3.1] - 2026-06-03
+
+### Fixed
+
+- **`deleteApp(appId)`** ahora usa el path correcto `/api/v1/applications/recycle/{id}` (antes intentaba `/{id}/recycle` que da 404 → traducido a `code:5000 "Service is busy"` por Lowcoder).
+
+### Added
+
+- `LowcoderClient.recycleApp(appId)` — soft-delete (mueve a papelera). Path: `PUT /api/v1/applications/recycle/{id}`
+- `LowcoderClient.restoreApp(appId)` — restaurar de papelera. Path: `PUT /api/v1/applications/restore/{id}`
+- `LowcoderClient.listRecycledApps()` — lista la papelera
+- `LowcoderClient.deleteAppPermanently(appId)` — DELETE permanente (requiere recycle previo)
+- Entrada en `troubleshooting.md` documentando que `code: 5000 "Service is busy"` es realmente un 404 disfrazado, con tabla de paths conocidos.
+
+### Why
+
+El usuario notó que apps de prueba creadas durante verificación no podían borrarse. Diagnóstico mostró que el path REST `/{id}/recycle` no existe en Lowcoder 2.7.6 — el correcto es `/recycle/{id}`. Lowcoder devuelve `code:5000` para CUALQUIER 404 lo cual oculta este tipo de errores. Documentado para evitar la trampa en el futuro.
+
 ## [0.3.0] - 2026-06-03
 
 ### Added — Soporte completo de datasources
