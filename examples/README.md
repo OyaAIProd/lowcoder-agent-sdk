@@ -5,9 +5,12 @@ Ejecuta cualquier ejemplo con:
 ```bash
 LOWCODER_BASE_URL="https://tu-lowcoder.ejemplo.com" \
 LOWCODER_API_KEY="tu-token" \
-LOWCODER_ORG_ID="tu-org-id" \
 npx tsx examples/01-hello-world.ts
 ```
+
+> Nota: el `LOWCODER_ORG_ID` es opcional — el SDK lo auto-detecta llamando a
+> `/api/v1/users/me`. Si tienes varios workspaces, pásalo explícito:
+> `await app.deploy(client, "tu-org-id")`.
 
 ## Catálogo
 

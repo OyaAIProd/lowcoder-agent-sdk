@@ -81,6 +81,7 @@ En **Settings → Cursor Settings → MCP**:
 
 | Tool | Para qué sirve |
 | --- | --- |
+| `get_my_orgs` | Devuelve las organizaciones del usuario y marca cuál es la activa. **Úsalo cuando NO sepas qué orgId usar.** Auto-descubre desde `/api/v1/users/me` |
 | `get_component_types` | Lista los ~80 tipos de componentes disponibles con sus tamaños por defecto. **Llamar primero** antes de crear apps |
 | `create_app` | Crea una aplicación completa de una sola llamada con componentes, queries, settings |
 | `update_app` | Añade componentes/queries a una app existente sin eliminar los anteriores |

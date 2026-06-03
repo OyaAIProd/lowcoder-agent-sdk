@@ -107,7 +107,7 @@ const client = new LowcoderClient({
   apiKey: process.env.LOWCODER_API_KEY!,
 });
 
-const result = await app.deploy(client, process.env.LOWCODER_ORG_ID!);
+const result = await app.deploy(client);
 const appId = result.applicationInfoView.applicationId;
 console.log(`✅ CRUD creado`);
 console.log(`   ${process.env.LOWCODER_BASE_URL}/apps/${appId}/view`);

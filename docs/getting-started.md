@@ -6,15 +6,65 @@ Guía paso a paso para crear tu primera app Lowcoder desde código en ~10 minuto
 
 - Node.js >= 18
 - Una instancia de Lowcoder ≥ **2.7.0** (versiones anteriores tienen un bug crítico con queries JS)
-- Tu `LOWCODER_BASE_URL`, `LOWCODER_API_KEY` y `LOWCODER_ORG_ID`
+- Tu `LOWCODER_BASE_URL` y `LOWCODER_API_KEY` (el `orgId` se auto-detecta)
 
 ### Cómo obtener las credenciales
 
-| Variable | Cómo |
-| --- | --- |
-| `LOWCODER_BASE_URL` | URL pública de tu instancia, sin trailing slash. Ej: `https://lowcoder.empresa.com` |
-| `LOWCODER_API_KEY` | Tu avatar (esquina superior derecha) → **Profile** → **API Keys** → **Create new key** → copia el token |
-| `LOWCODER_ORG_ID` | Aparece en cualquier app listada (campo `orgId`). Alternativamente: Settings → Organization |
+#### `LOWCODER_BASE_URL`
+
+URL pública de tu instancia, sin trailing slash. Ejemplos:
+- Self-hosted: `https://lowcoder.empresa.com`
+- Lowcoder Cloud: `https://app.lowcoder.cloud`
+- Docker local: `http://localhost:3000`
+
+#### `LOWCODER_API_KEY`
+
+1. Abre Lowcoder en el navegador
+2. Click en tu **avatar** (esquina superior derecha)
+3. Selecciona **My Profile**
+4. Ve a la pestaña **API Keys**
+5. Click **Create new** → dale un nombre (ej: "agent-sdk")
+6. Copia el **JWT token** completo (empieza con `eyJ...`)
+
+⚠️ El token NO se vuelve a mostrar. Guárdalo seguro inmediatamente.
+
+#### `LOWCODER_ORG_ID` (opcional — auto-detect)
+
+**No necesitas obtenerla manualmente.** El SDK la descubre llamando a `/api/v1/users/me`:
+
+```typescript
+const orgId = await client.getCurrentOrgId();
+// "69b44d7a4cf2e872dae12536"
+```
+
+Si **prefieres ponerla explícita** (más rápido — ahorra una llamada API), hay 3 formas:
+
+**Opción 1 — Desde el SDK:**
+
+```bash
+npx -p @aorizondo/lowcoder-agent-sdk-core node -e "
+import('@aorizondo/lowcoder-agent-sdk-core').then(async m => {
+  const c = new m.LowcoderClient({
+    baseUrl: process.env.LOWCODER_BASE_URL,
+    apiKey: process.env.LOWCODER_API_KEY,
+  });
+  const orgs = await c.listMyOrgs();
+  orgs.forEach(o => console.log(o.id, '|', o.name, o.isCurrent ? '← activa' : ''));
+});
+"
+```
+
+**Opción 2 — curl directo:**
+
+```bash
+curl -s -H "Authorization: Bearer $LOWCODER_API_KEY" \
+  "$LOWCODER_BASE_URL/api/v1/users/me" \
+  | jq -r '.data | "\(.currentOrgId)\t\(.username)"'
+```
+
+**Opción 3 — Desde la URL del navegador:**
+
+Cuando estás logueado en Lowcoder, navega a tu home y mira la URL — algunas versiones la incluyen, ej: `/org/{orgId}/...`. Si no aparece ahí, usa Opción 1 o 2.
 
 ## 1. Instala el SDK
 
@@ -62,7 +112,8 @@ const client = new LowcoderClient({
   apiKey: process.env.LOWCODER_API_KEY!,
 });
 
-const result = await app.deploy(client, process.env.LOWCODER_ORG_ID!);
+// orgId opcional — si no lo pasas, se auto-detecta
+const result = await app.deploy(client);
 const appId = result.applicationInfoView.applicationId;
 console.log(`✅ App creada`);
 console.log(`   Editor:  ${process.env.LOWCODER_BASE_URL}/apps/${appId}/edit`);
@@ -74,7 +125,6 @@ console.log(`   Preview: ${process.env.LOWCODER_BASE_URL}/apps/${appId}/view`);
 ```bash
 export LOWCODER_BASE_URL="https://tu-lowcoder.ejemplo.com"
 export LOWCODER_API_KEY="tu-token"
-export LOWCODER_ORG_ID="tu-org-id"
 
 npx tsx mi-primera-app.ts
 ```

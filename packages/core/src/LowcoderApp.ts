@@ -277,15 +277,24 @@ export class LowcoderApp {
     return JSON.stringify(this.build(), null, 2);
   }
 
+  /**
+   * Despliega la app a una instancia Lowcoder.
+   *
+   * @param client - LowcoderClient configurado
+   * @param orgId  - Opcional. Si se omite, se auto-detecta usando
+   *                 `client.getCurrentOrgId()` (la org activa del usuario actual)
+   * @param opts   - folderId y publish opcionales
+   */
   async deploy(
     client: LowcoderClient,
-    orgId: string,
+    orgId?: string,
     opts?: { folderId?: string; publish?: boolean }
   ): Promise<ApplicationView> {
     const dsl = this.build();
+    const resolvedOrgId = orgId ?? (await client.getCurrentOrgId());
     const app = await client.createApp({
       name: this.title,
-      orgId,
+      orgId: resolvedOrgId,
       applicationType: 1,
       editingApplicationDSL: dsl,
       folderId: opts?.folderId,

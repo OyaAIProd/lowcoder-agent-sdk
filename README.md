@@ -53,7 +53,8 @@ const client = new LowcoderClient({
   apiKey: process.env.LOWCODER_API_KEY!,
 });
 
-const result = await app.deploy(client, "tu-org-id");
+// orgId opcional — se auto-detecta del usuario autenticado
+const result = await app.deploy(client);
 console.log("App creada:", result.applicationInfoView.applicationId);
 ```
 

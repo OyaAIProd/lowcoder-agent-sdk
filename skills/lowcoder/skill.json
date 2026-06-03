@@ -10,8 +10,9 @@
     "sdkPackage": "@aorizondo/lowcoder-agent-sdk-core"
   },
   "setup": {
-    "env": ["LOWCODER_BASE_URL", "LOWCODER_API_KEY", "LOWCODER_ORG_ID"],
-    "instructions": "1) Get API key from your Lowcoder UI: Profile → API Keys → Create new key. 2) Get orgId from any existing app's metadata or Settings → Organization. 3) Configure MCP server in your agent client (Claude Code, Cursor, etc.) with the env vars."
+    "env": ["LOWCODER_BASE_URL", "LOWCODER_API_KEY"],
+    "optionalEnv": ["LOWCODER_ORG_ID"],
+    "instructions": "1) Get API key from your Lowcoder UI: avatar → My Profile → API Keys → Create new. 2) The orgId is auto-detected via /api/v1/users/me — no need to set it manually unless you have multiple workspaces. 3) Configure MCP server in your agent client (Claude Code, Cursor, etc.) with the env vars."
   },
   "links": {
     "homepage": "https://github.com/aorizondo/lowcoder-agent-sdk",

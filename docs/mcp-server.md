@@ -104,6 +104,14 @@ npx @modelcontextprotocol/inspector npx @aorizondo/lowcoder-mcp-server
 
 ## Tools disponibles
 
+### `get_my_orgs()`
+
+Sin argumentos. Devuelve las organizaciones del usuario autenticado, marcando cuál es la activa.
+
+**Úsalo cuando NO sepas qué `orgId` usar.** El campo `currentOrgId` es el que necesitas para `create_app`.
+
+→ `{ userId, username, currentOrgId, orgs: [...], hint: "..." }`
+
 ### `get_component_types()`
 
 Sin argumentos. Retorna lista completa de los ~80 tipos de componentes nativos. Llamar **antes** de crear apps si dudas qué `type` usar.

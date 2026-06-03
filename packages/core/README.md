@@ -37,7 +37,8 @@ const client = new LowcoderClient({
   baseUrl: "https://tu-lowcoder.ejemplo.com",
   apiKey: process.env.LOWCODER_API_KEY!,
 });
-const result = await app.deploy(client, "tu-org-id");
+// orgId es opcional — se auto-detecta llamando /api/v1/users/me
+const result = await app.deploy(client);
 console.log(`https://tu-lowcoder.ejemplo.com/apps/${result.applicationInfoView.applicationId}/edit`);
 ```
 
@@ -120,12 +121,18 @@ const client = new LowcoderClient({
   apiKey: "...",       // O usar email + password
 });
 
+// Apps
 await client.createApp({ orgId, name, applicationType: 1, editingApplicationDSL });
 await client.updateApp(appId, dsl);
 await client.getApp(appId);
 await client.publishApp(appId);
 await client.listApps(orgId);
 await client.deleteApp(appId);
+
+// Usuario y organizaciones (descubrir orgId)
+await client.getCurrentUser();    // { id, currentOrgId, username, orgAndRoles, ... }
+await client.getCurrentOrgId();   // "69b44d7a..." — el workspace activo
+await client.listMyOrgs();        // [{ id, name, role, isCurrent }, ...] ordenadas
 ```
 
 ## Expresiones `{{ }}`

@@ -62,13 +62,44 @@ Antes de hacer nada, elige el camino correcto:
 
 ### 2.1 Credenciales que vas a necesitar
 
-| Variable | Para qué | Cómo obtenerla |
-| --- | --- | --- |
-| `LOWCODER_BASE_URL` | URL de la instancia | El usuario te la da (ej: `https://lowcoder.empresa.com`). Sin trailing slash |
-| `LOWCODER_API_KEY` | Auth (recomendado) | Avatar superior derecho → Profile → API Keys → Create new key |
-| `LOWCODER_ORG_ID` | Organización destino | Settings → Organization, o aparece en el campo `orgId` de cualquier app listada |
+Solo necesitas **dos cosas** obligatorias. El `orgId` se auto-detecta:
 
-Si no las tienes, **pide al usuario que las consiga primero** — sin ellas no puedes desplegar.
+| Variable | Obligatoria | Cómo obtenerla |
+| --- | --- | --- |
+| `LOWCODER_BASE_URL` | ✅ | La URL de la instancia (ej: `https://lowcoder.empresa.com`). Sin trailing slash |
+| `LOWCODER_API_KEY` | ✅ | Avatar superior derecho → **My Profile** → tab **API Keys** → **Create new** → copia el JWT token |
+| `LOWCODER_ORG_ID` | ❌ opcional | Si la omites, el SDK la auto-detecta usando el endpoint `/api/v1/users/me` |
+
+### 2.2 Cómo obtener el `orgId` (si lo necesitas explícito)
+
+Tienes **3 formas**, ordenadas de más fácil a más manual:
+
+**Opción 1 — MCP tool (recomendada si tienes MCP instalado):**
+
+```
+get_my_orgs()
+// Devuelve: { currentOrgId: "...", orgs: [...], hint: "Para crear apps usa orgId: ..." }
+```
+
+**Opción 2 — SDK (en TypeScript):**
+
+```typescript
+const client = new LowcoderClient({ baseUrl, apiKey });
+const orgId = await client.getCurrentOrgId();
+// O todas las orgs del usuario:
+const orgs = await client.listMyOrgs();
+console.log(orgs[0].id, orgs[0].name, orgs[0].isCurrent);
+```
+
+**Opción 3 — curl directo:**
+
+```bash
+curl -s -H "Authorization: Bearer $LOWCODER_API_KEY" \
+  "$LOWCODER_BASE_URL/api/v1/users/me" \
+  | jq -r '.data.currentOrgId'
+```
+
+**Mejor aún: no se lo pidas al usuario.** Llama `get_my_orgs` o `getCurrentOrgId()` automáticamente al iniciar. Solo pídelo si el usuario tiene varias orgs y necesitas confirmar cuál usar.
 
 ### 2.2 Setup MCP (modo recomendado para sesiones interactivas)
 

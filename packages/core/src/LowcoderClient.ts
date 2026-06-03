@@ -2,7 +2,9 @@ import type {
   ApplicationMeta,
   ApplicationView,
   CreateAppRequest,
+  CurrentUserResponse,
   LowcoderDSL,
+  OrgInfo,
 } from "./dsl/types.js";
 
 export interface LowcoderClientConfig {
@@ -44,6 +46,41 @@ export class LowcoderClient {
       register: false,
     });
     this.token = res.token;
+  }
+
+  /**
+   * Obtiene el usuario actualmente autenticado, junto con TODAS las organizaciones
+   * a las que pertenece y la `currentOrgId` (workspace activo seleccionado en la UI).
+   *
+   * **Caso de uso principal:** descubrir tu `orgId` cuando no lo sabes.
+   * El campo `currentOrgId` es exactamente el que necesitas para `createApp`.
+   */
+  async getCurrentUser(): Promise<CurrentUserResponse> {
+    await this.authenticate();
+    return this.get<CurrentUserResponse>("/api/v1/users/me");
+  }
+
+  /**
+   * Atajo: devuelve solo la lista de organizaciones del usuario, ordenadas
+   * con la `currentOrgId` primero.
+   *
+   * @example
+   *   const orgs = await client.listMyOrgs();
+   *   console.log("Tu orgId actual:", orgs[0].id);
+   */
+  async listMyOrgs(): Promise<Array<OrgInfo & { role: string; isCurrent: boolean }>> {
+    const me = await this.getCurrentUser();
+    return me.orgAndRoles.map((entry) => ({
+      ...entry.org,
+      role: entry.role,
+      isCurrent: entry.org.id === me.currentOrgId,
+    })).sort((a, b) => Number(b.isCurrent) - Number(a.isCurrent));
+  }
+
+  /** Atajo aún más simple: solo devuelve el orgId activo */
+  async getCurrentOrgId(): Promise<string> {
+    const me = await this.getCurrentUser();
+    return me.currentOrgId;
   }
 
   async createApp(req: CreateAppRequest): Promise<ApplicationView> {

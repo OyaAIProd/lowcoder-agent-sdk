@@ -22,6 +22,10 @@ import {
   ConfigureSeoInputSchema,
   handleConfigureSeo,
 } from "./tools/configure_seo.js";
+import {
+  GetMyOrgsInputSchema,
+  handleGetMyOrgs,
+} from "./tools/get_my_orgs.js";
 
 // ─── Configuración desde variables de entorno ────────────────────────────────
 
@@ -110,6 +114,18 @@ server.tool(
   GetComponentTypesInputSchema.shape,
   async () => {
     const result = handleGetComponentTypes();
+    return { content: [{ type: "text", text: result }] };
+  }
+);
+
+server.tool(
+  "get_my_orgs",
+  "Devuelve las organizaciones (workspaces) del usuario autenticado, marcando cuál " +
+    "es la activa actualmente. Úsalo cuando NO sepas qué orgId usar para crear apps. " +
+    "El campo `currentOrgId` es el que necesitas en create_app.",
+  GetMyOrgsInputSchema.shape,
+  async () => {
+    const result = await handleGetMyOrgs(client);
     return { content: [{ type: "text", text: result }] };
   }
 );
