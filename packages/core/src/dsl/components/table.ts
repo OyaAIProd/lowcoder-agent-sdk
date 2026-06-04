@@ -24,15 +24,24 @@ export interface TableOptions {
 export const TABLE_SIZE: DefaultSize = { w: 12, h: 40 };
 
 export function tableDSL(opts: TableOptions): Record<string, unknown> {
-  const columns = (opts.columns ?? []).map((col) => ({
-    title: col.title,
-    dataIndex: col.dataIndex,
-    key: col.key ?? col.dataIndex,
-    isTag: col.isTag ?? false,
-    isLink: col.isLink ?? false,
-    editable: col.editable ?? false,
-    ...(col.width ? { width: col.width } : {}),
-  }));
+  // CRÍTICO: cada column necesita un `render` con `{{currentCell}}` para mostrar
+  // el valor en la celda. Sin `render`, Lowcoder dibuja la fila pero la celda
+  // queda vacía (no auto-deduce del `dataIndex`).
+  // Ref: client/packages/lowcoder/src/comps/comps/tableComp/column/tableColumnComp.tsx:newPrimaryColumn
+  // El compType "tag" pinta con colores; "text" es plano; "link" como anchor.
+  const columns = (opts.columns ?? []).map((col) => {
+    const renderType = col.isTag ? "tag" : col.isLink ? "link" : "text";
+    return {
+      title: col.title,
+      dataIndex: col.dataIndex,
+      key: col.key ?? col.dataIndex,
+      isTag: col.isTag ?? false,
+      isLink: col.isLink ?? false,
+      editable: col.editable ?? false,
+      render: { compType: renderType, comp: { text: "{{currentCell}}" } },
+      ...(col.width ? { width: col.width } : {}),
+    };
+  });
 
   return {
     data: opts.data,

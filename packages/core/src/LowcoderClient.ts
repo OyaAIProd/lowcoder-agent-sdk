@@ -130,6 +130,25 @@ export class LowcoderClient {
     await this.post<unknown>(`/api/v1/applications/${appId}/publish`, {});
   }
 
+  /**
+   * Marca la app como pública (cualquier visitante anónimo puede verla).
+   * Imprescindible para apps de login/registro o landing pages.
+   * Path: `PUT /api/v1/applications/{id}/public-to-all`
+   */
+  async setAppPublicToAll(appId: string, publicToAll: boolean): Promise<boolean> {
+    await this.authenticate();
+    return this.put<boolean>(`/api/v1/applications/${appId}/public-to-all`, { publicToAll });
+  }
+
+  /**
+   * Marca la app como pública en el marketplace de Lowcoder.
+   * Path: `PUT /api/v1/applications/{id}/public-to-marketplace`
+   */
+  async setAppPublicToMarketplace(appId: string, publicToMarketplace: boolean): Promise<boolean> {
+    await this.authenticate();
+    return this.put<boolean>(`/api/v1/applications/${appId}/public-to-marketplace`, { publicToMarketplace });
+  }
+
   async listApps(orgId?: string): Promise<ApplicationMeta[]> {
     await this.authenticate();
     const qs = orgId ? `?orgId=${orgId}` : "";

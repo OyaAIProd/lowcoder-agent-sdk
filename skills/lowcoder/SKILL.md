@@ -330,10 +330,13 @@ const client = new LowcoderClient({
   baseUrl: process.env.LOWCODER_BASE_URL!,
   apiKey: process.env.LOWCODER_API_KEY!,
 });
-// orgId opcional — auto-detectado del workspace activo del usuario
-const result = await app.deploy(client);
+// orgId opcional — auto-detectado del workspace activo del usuario.
+// replaceByName: true → elimina apps anteriores con el mismo nombre (deploy idempotente).
+const result = await app.deploy(client, undefined, { replaceByName: true });
 console.log(`✅ ${process.env.LOWCODER_BASE_URL}/apps/${result.applicationInfoView.applicationId}/edit`);
 ```
+
+> **💡 Sin `replaceByName: true`** cada ejecución del script crea una app NUEVA. Vas a acumular duplicados rápido si iteras desarrollo. Para deploys repetibles (CI, scripts) úsalo siempre. Para preservar el `appId` exacto entre deploys (los redirects de otras apps dependen de él), usa `client.updateApp(appId, dsl)` con el ID guardado en config.
 
 ### Paso 5: Configurar SEO (opcional pero recomendado para apps públicas)
 
@@ -590,11 +593,35 @@ app.addRestQuery("createUser", {
 
 ```typescript
 app.addSqlQuery("loadUsers", {
-  sql: "SELECT * FROM users WHERE status = '{{statusFilter.value}}'",
+  // NO uses comillas alrededor del binding: Lowcoder convierte {{x}} en un
+  // prepared statement (?) y JDBC pasa el valor como parámetro escapado.
+  sql: "SELECT * FROM users WHERE status = {{statusFilter.value}}",
   datasourceId: "abc123...",   // requerido
   dbType: "postgres",
   triggerType: "automatic",
 });
+```
+
+**⚠️ Reglas críticas para SQL en Lowcoder + PostgreSQL:**
+
+| Tipo de columna | Patrón correcto | Por qué |
+| --- | --- | --- |
+| `varchar`/`text` | `WHERE name = {{x}}` | Lowcoder hace `?` + bind como String → OK |
+| `int`/`numeric` | `WHERE qty = {{x}}` | Bind directo como Number |
+| **`uuid`** | `WHERE id = {{x}}::uuid` | JDBC pasa String, postgres NO auto-castea |
+| `jsonb` | `WHERE data @> {{x}}::jsonb` | Idem cast explícito |
+| `LIKE` con wildcards | `WHERE name LIKE {{'%' + filter.value + '%'}}` | Eval JS en cliente |
+| **NO HAGAS** | `WHERE id = '{{x}}'` ❌ | Las comillas convierten en literal — el `?` se ignora |
+
+```typescript
+// ❌ ANTI-PATRÓN — falla con "operator does not exist: uuid = character varying"
+sql: "SELECT * FROM instances WHERE user_id = '{{currentUser.id}}'"
+
+// ✅ CORRECTO
+sql: "SELECT * FROM instances WHERE user_id = {{currentUser.id}}::uuid"
+
+// ✅ INSERT con UUID + columnas tipadas
+sql: "INSERT INTO payments (user_id, amount) VALUES ({{cliente.value}}::uuid, {{monto.value}}) RETURNING id"
 ```
 
 ### 6.5 `triggerType`
@@ -805,7 +832,9 @@ Almacena valores intermedios. Se accede vía `{{stateName.value}}`.
 
 ```typescript
 app.addTempState("currentPage", 1);
+app.addTempState("currentView", "login");
 app.addTempState("selectedFilters", { status: "all", category: null });
+app.addTempState("isModalOpen", false);
 ```
 
 **Actualizar desde JS queries:**
@@ -813,8 +842,34 @@ app.addTempState("selectedFilters", { status: "all", category: null });
 ```javascript
 // En un script JS query
 currentPage.setValue(currentPage.value + 1);
+currentView.setValue("register");
 selectedFilters.setIn(["status"], "active");
+isModalOpen.setValue(true);
 ```
+
+**⚠️ Detalles de serialización (que el SDK ya maneja por ti):**
+
+Internamente Lowcoder serializa los tempStates en formato **flat** (no anidado en `comp`)
+y el `value` se almacena **JSON-stringified**:
+
+```json
+// En el DSL, Lowcoder espera:
+{
+  "tempStates": [
+    { "name": "currentView", "value": "\"login\"" },     // ✅ string JSON-encoded
+    { "name": "counter", "value": "42" },                 // ✅ number como JSON
+    { "name": "isOpen", "value": "false" },               // ✅ bool como JSON
+    { "name": "filter", "value": "{\"status\":\"active\"}" }
+  ]
+}
+
+// ❌ NO esto (lo que parece "natural"):
+{ "tempStates": [{ "name": "currentView", "comp": { "value": "login" } }] }
+// → produce currentView.value === "null" en runtime
+```
+
+Si construyes el DSL a mano (sin `addTempState`), aplica `JSON.stringify(initialValue)`
+y pon el resultado en el campo `value` a nivel raíz, no dentro de `comp`.
 
 ### Transformers
 
@@ -1106,9 +1161,61 @@ Instalar en Lowcoder: **Insert → Extensions → Add npm plugin** → buscar el
 **Causa:** `dataIndex` apunta a un objeto, no a primitiva.
 **Fix:** usa notación de path: `dataIndex: "company.name"` para nested objects.
 
-### ❌ El botón submit del form no funciona
-**Causa:** el form requiere `type: "submit"` en el botón **Y** que el botón esté dentro del form, no afuera.
-**Fix:** anida el botón en el form, o usa un botón normal con `onClick` que llame al query.
+### ❌ Tabla renderea filas pero las celdas están vacías
+**Causa:** las columnas necesitan un campo `render` con `{{currentCell}}` para mostrar el valor. Sin `render`, Lowcoder dibuja las filas pero no sabe qué pintar — el `dataIndex` solo indica de dónde leer el dato, no cómo renderizarlo.
+**Fix:** el SDK 0.4+ añade `render` automáticamente. Si construyes el DSL a mano:
+```json
+{ "title": "Nombre", "dataIndex": "name", "key": "name",
+  "render": { "compType": "text", "comp": { "text": "{{currentCell}}" } } }
+```
+Para columnas con `isTag: true` usa `compType: "tag"` (pinta colores según valor único). Para links: `compType: "link"`.
+
+### ❌ Select dinámico muestra "Option 1", "Option 2" en lugar de mis opciones reales
+**Causa:** pasaste options como string `"{{query.data?.map(...)}}"` pero Lowcoder espera un objeto estructurado con `optionType: "map"` + `mapData`.
+**Fix con SDK 0.4+:** pasa un objeto `{ data, label, value }` con bindings `{{item.x}}`:
+```typescript
+app.addSelect("userSelect", {
+  options: {
+    data: "{{loadUsers.data}}",
+    label: "{{item.name}}",
+    value: "{{item.id}}",
+  },
+});
+```
+Para options estáticas, sigue usando array `[{label, value}, ...]`.
+
+### ❌ El botón submit del form no funciona / no ejecuta su onClick
+**Causa:** Lowcoder trata `type: "submit"` como **submit del form referenciado** y **omite completamente** `onEvent`. Si el botón NO está dentro de un Form (o no tiene `form: "myForm"`), el click no hace nada — `submitForm(props.form)` no encuentra qué submitear y la acción muere en silencio. **No hay error en consola, no hay toast, el botón vuelve a estado normal.**
+
+Confirmado en source: [client/packages/lowcoder/src/comps/comps/buttonComp/buttonComp.tsx:201-209](https://github.com/lowcoder-org/lowcoder/blob/main/client/packages/lowcoder/src/comps/comps/buttonComp/buttonComp.tsx#L201-L209):
+```typescript
+if (isDefault(props.type)) {
+  handleClickEvent();        // ejecuta tu onEvent
+} else {
+  submitForm(editorState, props.form);  // ignora onEvent, busca el form
+}
+```
+
+**Fix opción A (recomendado para login/registro fuera de Form):** usa botón normal sin `type`:
+```typescript
+app.addButton("loginBtn", {
+  text: "Iniciar Sesión",
+  onClick: "doLogin",   // ✅ ejecuta la query
+  // SIN type:"submit"
+});
+```
+
+**Fix opción B (si quieres el botón dentro de un Form real):** envuelve el botón en `addComponent("loginForm", "form", { items, layout })` y referencia el form:
+```typescript
+app.addButton("loginBtn", {
+  text: "Iniciar Sesión",
+  type: "submit",
+  form: "loginForm",   // referencia el ID del Form padre
+  onClick: "doLogin",
+});
+```
+
+El SDK 0.4+ emite un `console.warn` si detecta `type: "submit" + onClick` sin `form`.
 
 ### ❌ El `bodyType: "json"` da error
 **Causa:** Lowcoder requiere MIME type completo.
@@ -1117,6 +1224,42 @@ Instalar en Lowcoder: **Insert → Extensions → Add npm plugin** → buscar el
 ### ❌ Meta tags SEO se sobreescriben
 **Causa:** Lowcoder pone sus defaults DESPUÉS de tu preload script.
 **Fix:** usa `configure_seo` tool (incluye retries con setTimeout 500ms, 2s, 5s).
+
+### ❌ App pública pide login (anónimos no entran)
+**Causa:** la app no está marcada `publicToAll: true`. Por defecto Lowcoder requiere auth.
+**Fix:** llama `client.setAppPublicToAll(appId, true)` o usa `app.deploy(client, undefined, { publicToAll: true })`. Imprescindible para portales de login/registro y landing pages.
+
+### ❌ `currentView.value === "null"` (string literal) en runtime
+**Causa:** estás construyendo tempStates con formato anidado `{ name, comp: { value } }`. Lowcoder espera FLAT y JSON-stringified.
+**Fix:** usa `addTempState("name", value)` del SDK (lo hace bien). Si construyes a mano: `{ name: "currentView", value: JSON.stringify("login") }`. Ver §8 para detalles.
+
+### ❌ `operator does not exist: uuid = character varying` en PostgreSQL
+**Causa:** comillas alrededor del binding o falta `::uuid` cast.
+**Fix:** `WHERE id = {{x}}::uuid` (sin comillas + cast). Detalles en §6.4.
+
+### ❌ App duplicada en cada `deploy()`
+**Causa:** `deploy()` siempre crea una nueva — no es idempotente por defecto.
+**Fix:** `app.deploy(client, orgId, { replaceByName: true, publish: true })`. Elimina apps anteriores con el mismo nombre antes de crear.
+
+### ❌ Apps que se referencian (redirects, links) rompen tras redeploy
+**Causa:** IDs hardcoded `/apps/abc123/view` cambian cuando recreas la app destino.
+**Fix:** descubre los IDs dinámicamente:
+```typescript
+const allApps = await client.listApps(orgId);
+const adminId = allApps.find(a => a.name === "Admin" && a.applicationStatus === "NORMAL")?.applicationId;
+```
+
+### ❌ `hidden: "{{x !== 'login'}}"` no oculta los hijos del card
+**Causa:** en Lowcoder, `hidden` SOLO oculta el componente exacto. Los inputs son **hermanos** del card en el grid (no hijos anidados), por lo que el card desaparece pero los inputs siguen visibles.
+**Fix correcto:** poner `hidden` en CADA componente que quieras ocultar (input, button, link, text...). NO solo en el card contenedor. O usar un `container` real con `items + layout` anidados (cuya visibilidad sí cascada).
+
+### ❌ Label de input vacío o "Label" como texto
+**Causa:** pasaste `label: "Mi etiqueta"` (string) a un componente que espera `label: { text: "Mi etiqueta" }` (object). Algunos componentes (input estándar) aceptan ambos; otros (password, numberInput) requieren el objeto.
+**Fix:** el SDK ya normaliza string → object automáticamente en `addComponent()`. Si construyes a mano, usa `{ text: "..." }`.
+
+### ❌ Snapshot del browser muestra inputs ocultos como "visible"
+**Causa:** Lowcoder no usa `display: none` en componentes con `hidden=true` — los oculta visualmente con CSS pero el DOM sigue ahí. Herramientas como Selenium/snapshots los detectan.
+**Fix:** usa el screenshot real para validar UI, no solo el snapshot textual. Verifica `getBoundingClientRect()` o `offsetParent === null` para presencia real.
 
 ---
 
@@ -1167,6 +1310,144 @@ Instalar en Lowcoder: **Insert → Extensions → Add npm plugin** → buscar el
 - **NUNCA hardcodees secretos en queries JS** — usa env vars del datasource.
 - **Las queries JS corren en el navegador del usuario** — cualquier secret en el script es público.
 - **Para API calls con auth, usa REST query con datasource configurado**, no fetch JS.
+
+### Deploy idempotente
+
+```typescript
+// ❌ MAL — acumula apps duplicadas cada vez que ejecutas el script
+const result = await app.deploy(client);
+
+// ✅ BIEN — elimina apps anteriores con el mismo nombre, publica + público si aplica
+const result = await app.deploy(client, undefined, {
+  replaceByName: true,    // elimina duplicados previos
+  publish: true,           // publica la versión (necesario para algunas features de /view)
+  publicToAll: true,       // solo para apps públicas (login, registro, landing)
+});
+```
+
+### Cross-app references (redirects, links)
+
+```typescript
+// ❌ MAL — IDs hardcoded se rompen tras redeploy
+const APP_ID_ADMIN = "6a1fde3dec32cf26f7e98b19";  // se quedó stale tras redeploy
+
+// ✅ BIEN — descubrir IDs dinámicamente desde la lista
+const allApps = await client.listApps(orgId);
+const adminApp = allApps.find(a => a.name === "Panel Admin" && a.applicationStatus === "NORMAL");
+if (!adminApp) throw new Error("Deploy 'Panel Admin' primero");
+const APP_ID_ADMIN = adminApp.applicationId;
+```
+
+**Orden de deploy importa:** primero las apps destino, luego las que las referencian.
+
+### SQL con PostgreSQL: UUIDs y otros tipos
+
+```typescript
+// ❌ MAL — comillas convierten el binding en literal, no parámetro
+app.addSqlQuery("getUser", {
+  sql: "SELECT * FROM users WHERE id = '{{currentUser.id}}'",
+});
+
+// ❌ MAL — sin comillas pero sin cast → "operator does not exist: uuid = character varying"
+app.addSqlQuery("getUser", {
+  sql: "SELECT * FROM users WHERE id = {{currentUser.id}}",
+});
+
+// ✅ BIEN — sin comillas + cast explícito
+app.addSqlQuery("getUser", {
+  sql: "SELECT * FROM users WHERE id = {{currentUser.id}}::uuid",
+});
+```
+
+Aplica el mismo patrón a `jsonb`, `timestamp`, arrays. Para `LIKE`, la expresión completa va dentro del binding:
+
+```typescript
+sql: "SELECT * FROM users WHERE name ILIKE {{'%' + search.value + '%'}}"  // ✅
+```
+
+### Toggle de vistas (login/registro, tabs, modos)
+
+```typescript
+// ❌ MAL — el hidden del card NO oculta los inputs hermanos en el grid
+app
+  .addCard("loginCard", { hidden: "{{view.value !== 'login'}}", at: { x:6, y:0, w:12, h:40 } })
+  .addInput("emailInput", { at: { x:7, y:5, w:10, h:8 } })   // ← se ve siempre
+  .addCard("regCard", { hidden: "{{view.value !== 'register'}}", at: { x:6, y:0, w:12, h:40 } })
+  .addInput("nameInput", { at: { x:7, y:5, w:10, h:8 } });    // ← se ve siempre
+
+// ✅ BIEN opción A — repetir `hidden` en TODOS los componentes
+const hideLogin = "{{view.value !== 'login'}}";
+const hideReg = "{{view.value !== 'register'}}";
+app
+  .addCard("loginCard", { hidden: hideLogin, at: { x:6, y:0, w:12, h:40 } })
+  .addInput("emailInput", { hidden: hideLogin, at: { x:7, y:5, w:10, h:8 } })
+  .addCard("regCard", { hidden: hideReg, at: { x:6, y:0, w:12, h:40 } })
+  .addInput("nameInput", { hidden: hideReg, at: { x:7, y:5, w:10, h:8 } });
+
+// ✅ BIEN opción B — separar visualmente en distintos `y` (no solapar)
+app
+  .addCard("loginCard", { hidden: hideLogin, at: { x:6, y:0,  w:12, h:40 } })
+  .addInput("emailInput", { hidden: hideLogin, at: { x:7, y:5,  w:10, h:8 } })
+  .addCard("regCard",   { hidden: hideReg,   at: { x:6, y:50, w:12, h:50 } })
+  .addInput("nameInput", { hidden: hideReg,   at: { x:7, y:55, w:10, h:8 } });
+
+// ✅ BIEN opción C — usar `container` con items+layout anidados (hijos heredan visibilidad)
+app.addComponent("loginContainer", "container", {
+  hidden: hideLogin,
+  items: { [k1]: { compType: "input", name: "emailInput", comp: {...} } },
+  layout: { [k1]: { i: k1, x: 0, y: 0, w: 24, h: 8 } },
+  at: { x: 6, y: 0, w: 12, h: 40 },
+});
+```
+
+### Inicialización correcta de tempStates
+
+```typescript
+// ❌ MAL si construyes el DSL a mano sin usar addTempState
+{ tempStates: [{ name: "view", comp: { value: "login" } }] }  // resulta en value === "null"
+
+// ✅ BIEN — usa addTempState() que ya lo hace por ti
+app.addTempState("view", "login");        // string
+app.addTempState("count", 0);              // number
+app.addTempState("isOpen", false);         // bool
+app.addTempState("filter", { ok: true });  // object
+
+// ✅ BIEN — si construyes a mano: flat + JSON.stringify
+{ tempStates: [{ name: "view", value: JSON.stringify("login") }] }
+```
+
+### Labels en componentes de input
+
+```typescript
+// ❌ Antes del SDK 0.4 (o si construyes a mano) — falla en password, numberInput
+{ label: "Contraseña" }   // queda como texto literal "Label" o vacío
+
+// ✅ BIEN — formato objeto que el SDK normaliza
+{ label: { text: "Contraseña", align: "left" } }
+
+// ✅ EQUIVALENTE — el SDK 0.4+ acepta string y lo normaliza
+app.addPassword("pw", { label: "Contraseña" })
+app.addInput("email", { label: "Email" })
+```
+
+### Patrón addRecord seguido de refresh
+
+```typescript
+// ❌ MAL — race condition, el refresh puede correr antes del insert
+btn.onClick → run insert + run reload (en paralelo)
+
+// ✅ BIEN — encadena con .then(), asegura orden
+.addJsQuery("saveAndReload", {
+  script: `return insertRecord.run().then(function() {
+    return loadRecords.run();
+  }).then(function() {
+    message.success("Guardado");
+  }).catch(function(err) {
+    message.error("Error: " + err.message);
+  });`,
+  triggerType: "manual",
+})
+```
 
 ---
 

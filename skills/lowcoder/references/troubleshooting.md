@@ -80,11 +80,312 @@ Si ves `ResponseStatusException: 404 NOT_FOUND` → el path está mal escrito o 
 
 **Fix:** `docker ps | grep node-service` — si no aparece o está reiniciándose, reinícialo desde Easypanel.
 
+### `operator does not exist: uuid = character varying` (PostgreSQL)
+
+**Causa:** estás interpolando un UUID como string. Lowcoder convierte `{{x}}` en un **prepared statement** (`?`) y JDBC pasa el valor como `String`. PostgreSQL no auto-castea `varchar → uuid` cuando la columna es `uuid`.
+
+**Fix:** usa el cast explícito `::uuid` **sin comillas** alrededor del binding:
+
+```sql
+-- ❌ Mal — comillas convierten el ? en literal string, no en parámetro
+WHERE id = '{{currentUser.id}}'
+
+-- ❌ Mal — sin cast, falla con "operator does not exist: uuid = character varying"
+WHERE id = {{currentUser.id}}
+
+-- ✅ Bien — cast explícito, sin comillas
+WHERE id = {{currentUser.id}}::uuid
+
+-- ✅ También válido — castea la columna a text
+WHERE id::text = {{currentUser.id}}
+```
+
+Aplica también a `INSERT`/`UPDATE`:
+
+```sql
+INSERT INTO payments (user_id, amount) VALUES ({{clienteSelect.value}}::uuid, {{montoInput.value}})
+UPDATE users SET status='active' WHERE id = {{selectedRow.id}}::uuid
+```
+
+**Regla general:** todas las columnas tipadas (`uuid`, `jsonb`, `timestamp`, arrays) requieren cast explícito en bindings.
+
+### Bindings con expresiones JS complejas no se evalúan en SQL
+
+**Causa:** Lowcoder evalúa el contenido de `{{...}}` como expresión JS en el cliente y lo manda al servidor como prepared parameter. Funciona, pero el **debug es confuso** si pruebas vía `/api/query/execute` directamente — el servidor busca la key literal en `params`.
+
+**Fix en SQL:** las expresiones JS complejas SÍ funcionan en el frontend:
+
+```sql
+-- ✅ funciona — Lowcoder envía la key literal con el valor evaluado
+WHERE u.status LIKE {{'%' + statusFilter.value + '%'}}
+WHERE created_at > {{moment().subtract(7, 'days').toISOString()}}
+```
+
+Pero si testeas directo con `curl /api/query/execute`, debes mandar `params: [{key: "'%' + statusFilter.value + '%'", value: "%active%"}]` — la KEY es la expresión completa, el VALUE es lo que el cliente habría evaluado.
+
+### Deploy crea apps duplicadas en cada ejecución
+
+**Causa:** `LowcoderApp.deploy(client)` siempre crea una app nueva — no es idempotente.
+
+**Fix:** elimina las versiones previas antes de deployar (búsqueda por nombre):
+
+```typescript
+const APP_NAME = "Mi Dashboard";
+const orgId = await client.getCurrentOrgId();
+const allApps = await client.listApps(orgId);
+for (const old of allApps.filter((a: any) => a.name === APP_NAME)) {
+  try { await client.deleteApp(old.applicationId); } catch { /* ignore */ }
+}
+const result = await app.deploy(client);
+```
+
+Esto borra (recycle) tanto las activas como las que ya estaban recicladas con el mismo nombre. Si quieres preservar el ID estable entre deploys, usa `client.updateApp(appId, dsl)` con un appId guardado en config.
+
+### Apps que se referencian entre sí (redirects, links) con IDs hardcoded
+
+**Causa:** typical anti-pattern — `window.open('/apps/abc123/view')` con un ID que cambió en el último redeploy.
+
+**Fix:** descubre los IDs dinámicamente al deployar el script que los referencia:
+
+```typescript
+const allApps = await client.listApps(orgId);
+const adminApp = allApps.find(a => a.name === "Panel Admin" && a.applicationStatus === "NORMAL");
+if (!adminApp) throw new Error("Panel Admin no encontrada — deploy primero");
+const APP_ID_ADMIN = adminApp.applicationId;
+// ...usa APP_ID_ADMIN en los redirects del DSL
+```
+
+Orden de deploy importa: primero apps "destino", luego las que las referencian.
+
 ### Queries REST fallan con 401
 
 **Causa:** el `datasourceId` apunta a un datasource que no existe o no tienes permisos.
 
 **Fix:** verifica con `get_app_dsl({ appId, simplified: false })` el `datasourceId` real. Si es REST sin datasource configurado, usa **`addFetchQuery()`** (JS interno) en lugar de `addRestQuery()`.
+
+## Errores de estado y bindings
+
+### TempState devuelve string `"null"` o no se inicializa con el valor que pasé
+
+**Causa:** Lowcoder serializa los tempStates en un formato muy específico que **no es intuitivo**:
+1. El campo `value` debe estar al **nivel raíz** del objeto, NO anidado en `comp.value`.
+2. El valor debe ser **JSON-stringified** (porque internamente usa `jsonValueControl`).
+
+**❌ Formato que falla** (resulta en `currentView.value === "null"`):
+```json
+{ "tempStates": [{ "name": "currentView", "comp": { "value": "login" } }] }
+```
+
+**✅ Formato correcto:**
+```json
+{ "tempStates": [
+  { "name": "currentView", "value": "\"login\"" },   // string JSON-encoded
+  { "name": "count", "value": "42" },                // number como JSON
+  { "name": "isOpen", "value": "false" },            // bool como JSON
+  { "name": "filter", "value": "{\"status\":\"active\"}" }
+]}
+```
+
+**Fix automático:** usa `app.addTempState(name, value)` del SDK (0.4+) — aplica `JSON.stringify(value ?? null)` y pone el campo flat. Si construyes el DSL a mano, replica ese patrón.
+
+### `hidden: true` en un card NO oculta los inputs/botones dentro del grid
+
+**Causa:** en el grid de Lowcoder, los inputs son **hermanos** del card (en el mismo nivel del grid), no hijos anidados del card. El `hidden` solo afecta al componente exacto donde se aplica.
+
+**Síntoma:** ves el card desaparecer pero los inputs/botones que pusiste "encima" siguen visibles.
+
+**Fix opción A (más simple):** repite `hidden` en cada componente:
+```typescript
+const hideLogin = "{{currentView.value !== 'login'}}";
+app
+  .addCard("loginCard", { hidden: hideLogin, at: { ... } })
+  .addInput("emailInput", { hidden: hideLogin, at: { ... } })
+  .addInput("passwordInput", { hidden: hideLogin, at: { ... } })
+  .addButton("loginBtn", { hidden: hideLogin, at: { ... } });
+```
+
+**Fix opción B (más limpio):** usa un `container` real con `items + layout` anidados — la visibilidad sí cascada:
+```typescript
+const k1 = genGridKey(), k2 = genGridKey();
+app.addComponent("loginContainer", "container", {
+  hidden: hideLogin,
+  items: {
+    [k1]: { compType: "input", name: "emailInput", comp: { label: { text: "Email" } } },
+    [k2]: { compType: "button", name: "loginBtn", comp: { text: "Login" } },
+  },
+  layout: {
+    [k1]: { i: k1, x: 0, y: 0, w: 24, h: 8 },
+    [k2]: { i: k2, x: 0, y: 10, w: 24, h: 6 },
+  },
+  at: { x: 0, y: 0, w: 24, h: 40 },
+});
+```
+
+**Fix opción C:** separar visualmente las vistas en distintos `y` (no solapar) para evitar confusión visual cuando el hidden no funciona perfecto.
+
+### App pública pide login a visitantes anónimos
+
+**Causa:** la app no está marcada como `publicToAll: true`. Por defecto Lowcoder protege las apps detrás del SSO.
+
+**Fix:**
+```typescript
+// SDK 0.4+
+await app.deploy(client, undefined, { publicToAll: true });
+
+// O sobre una app existente
+await client.setAppPublicToAll(appId, true);
+```
+
+**Cuándo usar:** apps de login/registro (paradoja: el login mismo NO puede requerir login), landing pages, formularios públicos de contacto.
+
+### Tabla muestra filas pero todas las celdas están vacías
+
+**Causa:** las columnas del DSL necesitan un campo `render` con `{{currentCell}}` para mostrar el valor. Sin `render`, Lowcoder dibuja la fila pero NO sabe qué pintar en cada celda (no auto-deduce del `dataIndex`).
+
+**DSL ✅ correcto:**
+
+```json
+{
+  "title": "Nombre",
+  "dataIndex": "name",
+  "key": "name",
+  "render": { "compType": "text", "comp": { "text": "{{currentCell}}" } }
+}
+```
+
+**DSL ❌ que falla:**
+
+```json
+{
+  "title": "Nombre",
+  "dataIndex": "name",
+  "key": "name"
+}
+```
+
+**Fix:** SDK 0.4+ añade `render` automáticamente. Si construyes el DSL a mano, replica el patrón. Para columnas con `isTag: true` usa `compType: "tag"` (color por valor). Para links: `compType: "link"`.
+
+Confirmado en source: [client/packages/lowcoder/src/comps/comps/tableComp/column/tableColumnComp.tsx:newPrimaryColumn](https://github.com/lowcoder-org/lowcoder/blob/main/client/packages/lowcoder/src/comps/comps/tableComp/column/tableColumnComp.tsx).
+
+### Select muestra "Option 1", "Option 2" en lugar de mis opciones dinámicas
+
+**Causa:** estás pasando las options como string crudo `"{{query.data?.map(...)}}"` pero el formato esperado por Lowcoder es un objeto estructurado con `optionType: "map"` + `mapData`.
+
+**Formato ❌ que falla** (queda en defaults "Option 1, 2"):
+
+```json
+{
+  "options": "{{loadUsers.data?.map(function(u) { return {label: u.name, value: u.id}; }) || []}}"
+}
+```
+
+O peor (lo que el SDK <0.4 generaba):
+
+```json
+{
+  "options": { "type": "mapData", "data": "{{...}}" }
+}
+```
+
+**Formato ✅ correcto:**
+
+```json
+{
+  "options": {
+    "optionType": "map",
+    "manual": { "manual": [] },
+    "mapData": {
+      "data": "{{loadUsers.data}}",
+      "mapData": { "label": "{{item.name}}", "value": "{{item.id}}" }
+    }
+  }
+}
+```
+
+**Fix con SDK 0.4+:** pasa un objeto `{ data, label, value }` en lugar de string:
+
+```typescript
+app.addSelect("userSelect", {
+  label: "Usuario",
+  options: {
+    data: "{{loadUsers.data}}",
+    label: "{{item.name}}",
+    value: "{{item.id}}",
+  },
+});
+```
+
+Para options estáticas, usa array:
+
+```typescript
+app.addSelect("statusFilter", {
+  label: "Estado",
+  options: [
+    { label: "Todos", value: "%" },
+    { label: "Activo", value: "active" },
+  ],
+});
+```
+
+Confirmado en source: [client/packages/lowcoder/src/comps/controls/optionsControl.tsx](https://github.com/lowcoder-org/lowcoder/blob/main/client/packages/lowcoder/src/comps/controls/optionsControl.tsx).
+
+### Botón con `type: "submit"` ignora el `onClick` y no hace nada
+
+**El bug más silencioso del DSL de Lowcoder.** El click responde visualmente (botón se "presiona") pero NO ejecuta nada — sin error, sin toast, sin request en Network.
+
+**Causa raíz** (confirmada en source `buttonComp.tsx:201-209`):
+
+```typescript
+const handleClick = useCallback(() => {
+  if (!mountedRef.current) return;
+  try {
+    if (isDefault(props.type)) {
+      handleClickEvent();           // ✅ ejecuta tu onEvent (queries, scripts)
+    } else {
+      submitForm(editorState, props.form);  // ❌ ignora onEvent; busca el form
+    }
+  } catch (error) {
+    console.error("Error in button click handler:", error);
+  }
+}, [props.type, props.onEvent, props.form, editorState]);
+```
+
+Cuando `type !== ""` (ej: `"submit"`), Lowcoder ejecuta `submitForm(props.form)`. Si `props.form` apunta a un Form inexistente (o no se pasó), la acción muere sin error.
+
+**Diagnóstico:**
+1. Lee el DSL del botón: `client.getApp(appId)` → `ui.items[btnKey].comp.type` — si dice `"submit"` y no hay `form`, ese es el bug
+2. Compara con un botón hermano que SÍ funciona: si el otro tiene `type: ""` o no tiene `type`, confirmado
+3. Cambia temporalmente el botón malo a `type: ""` y prueba — si funciona, era esto
+
+**Fix opción A (recomendado para botones sueltos):** quita `type`:
+```typescript
+// ❌ Mal — pierde onClick
+app.addButton("loginBtn", { text: "Login", type: "submit", onClick: "doLogin" });
+
+// ✅ Bien
+app.addButton("loginBtn", { text: "Login", onClick: "doLogin" });
+```
+
+**Fix opción B (si quieres usar Form):** envuelve los inputs+botón en un `addComponent("loginForm", "form", { items, layout })` y referencia el form:
+```typescript
+app.addButton("loginBtn", {
+  text: "Login",
+  type: "submit",
+  form: "loginForm",    // ID del Form padre
+  onClick: "doLogin",
+});
+```
+
+El SDK 0.4+ emite `console.warn` cuando detecta este anti-patrón.
+
+### Inputs ocultos aparecen como "visible" en snapshots de browser
+
+**Causa:** Lowcoder NO usa `display: none` para los componentes con `hidden=true`. Los oculta visualmente con CSS pero el DOM permanece. Herramientas como Selenium, Puppeteer snapshots o screen readers los detectan.
+
+**Fix:**
+- Para validación visual: usa `getBoundingClientRect()` y verifica que el viewport los muestre (los wrappers padre tienen `height: 0` cuando ocultos).
+- Para tests: query `[aria-hidden="true"]` o evalúa `el.offsetParent === null`.
+- No te confíes del snapshot textual del DOM para confirmar visibilidad — toma screenshot real.
 
 ## Errores de componentes
 

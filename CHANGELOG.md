@@ -2,6 +2,62 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) y versionado semántico ([SemVer](https://semver.org/spec/v2.0.0.html)).
 
+## [0.4.1] - 2026-06-03
+
+### Fixed — bugs adicionales descubiertos verificando E2E las apps reales
+
+- **`tableDSL` ahora añade `render` a cada column.** Sin esto, Lowcoder dibuja las filas pero las celdas quedan vacías (no auto-deduce del `dataIndex`). El SDK añade `{ render: { compType: "text"|"tag"|"link", comp: { text: "{{currentCell}}" } } }` según `isTag`/`isLink`.
+  - Confirmado en `client/packages/lowcoder/src/comps/comps/tableComp/column/tableColumnComp.tsx:newPrimaryColumn`.
+- **`selectDSL` ahora genera el formato correcto para options dinámicas.** Antes se pasaba como `{ type: "mapData", data: "..." }`, lo cual Lowcoder ignoraba y caía a defaults ("Option 1, 2"). Ahora produce `{ optionType: "map", manual: { manual: [] }, mapData: { data, mapData: { label, value } } }`.
+  - Confirmado en `client/packages/lowcoder/src/comps/controls/optionsControl.tsx`.
+- **`buttonDSL` warning si se usa `type: "submit"` sin `form`**. Lowcoder ramifica `handleClick` y omite `onEvent` cuando `type !== ""`, lo que hace que el click no haga nada (sin error, sin toast). El SDK emite `console.warn` cuando detecta el anti-patrón y soporta el nuevo opt `form` para botones dentro de un Form real.
+  - Confirmado en `client/packages/lowcoder/src/comps/comps/buttonComp/buttonComp.tsx:201-209`.
+
+### Added
+
+- **`SelectOptionsMap` type** — interfaz nueva para options dinámicas: `{ data, label, value }` (strings con bindings `{{item.x}}`).
+- **`ButtonOptions.form`** — referencia al form padre cuando se usa `type: "submit"` legítimamente.
+
+### Documentation
+
+- **SKILL.md §13 (Errores comunes)** ampliado con 3 entradas: tabla con celdas vacías, select dinámico con defaults, botón submit silencioso.
+- **troubleshooting.md** sección "Errores de componentes" con 3 entradas nuevas y referencias al source de Lowcoder.
+
+### Why
+
+Tras la verificación E2E con browseros se confirmó que TODAS las apps tienen el mismo trio de bugs estructurales: tabla sin render → celdas vacías; select dinámico con string → "Option 1, 2"; botón type:submit sin form → click muerto. Ninguno produce error visible. Ahora el SDK los previene automáticamente y la doc explica cómo diagnosticar si aparecen en otro contexto.
+
+### Verified
+
+E2E con admin@solverius.cloud → login redirige a Panel Admin Clientes → tabla muestra clientes reales (Cliente Test 1 pending, Cliente Test 2 active con tags) → click fila abre drawer con detalles + botones contextuales (Activar disabled si active, etc.) → Mi Instancia muestra "No tienes instancia" → Admin Pagos muestra form con select de clientes dinámico funcionando.
+
+## [0.4.0] - 2026-06-03
+
+### Fixed — bugs descubiertos al verificar apps reales en navegador
+
+- **`addTempState()` ahora serializa correctamente** el valor inicial. Antes, pasar `addTempState("view", "login")` producía `view.value === "null"` en runtime porque el DSL se construía con formato anidado `{ name, comp: { value } }` cuando Lowcoder espera formato FLAT `{ name, value: JSON.stringify(initial) }`. Esto rompía cualquier toggle de vistas, contadores, modal visibility, etc.
+- **`label: "string"` ahora se normaliza** automáticamente a `label: { text: "string", align: "left" }` en `addComponent()`. Antes, componentes como `password`, `numberInput`, etc. recibían string y mostraban "Label" literal o vacío.
+
+### Added
+
+- **`LowcoderClient.setAppPublicToAll(appId, publicToAll)`** — marca la app pública (cualquier visitante anónimo puede verla). Imprescindible para apps de login/registro y landing pages.
+- **`LowcoderClient.setAppPublicToMarketplace(appId, bool)`** — equivalente para el marketplace.
+- **`LowcoderApp.deploy(client, orgId, opts)` extendido** con nuevas opciones:
+  - `replaceByName: true` — elimina apps anteriores con el mismo `title` antes de crear (deploy idempotente, evita acumular duplicados al iterar)
+  - `publicToAll: true` — combina create + publish + public-to-all en una sola llamada
+- **`LowcoderApp.addPassword(id, opts)`** — helper específico para inputs de password (acepta los mismos opts que `addInput`).
+
+### Documentation
+
+- **SKILL.md §8 (Estado: tempStates)** reescrito explicando el formato flat + JSON-stringify que Lowcoder espera internamente.
+- **SKILL.md §13 (Errores comunes)** ampliado con 7 entradas nuevas: app no pública, tempState "null", uuid casts, deploy duplicado, IDs hardcoded, hidden no cascada, label objeto.
+- **SKILL.md §14 (Buenas prácticas)** ampliada con 8 secciones de ejemplos +/-: deploy idempotente, cross-app references, SQL casts, toggle de vistas (3 patrones), tempStates correctos, labels, race conditions con `.then()`.
+- **troubleshooting.md** nueva sección "Errores de estado y bindings" con 5 entradas detalladas y fixes con código.
+
+### Why
+
+Verificación E2E en navegador (browseros) reveló bugs estructurales que las queries por sí solas no exponen: `loginUser` retornaba 1 fila correcta pero la UI mostraba doble vista solapada porque `currentView.value` no se inicializaba ("null"). El SDK ahora produce apps que SE VEN correctamente, no solo apps cuyo backend responde 200 OK.
+
 ## [0.3.1] - 2026-06-03
 
 ### Fixed
